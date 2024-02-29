@@ -1,0 +1,6 @@
+- name: Installing podman
+  import_role:
+    name: install
+  vars:
+    packages:
+      - podman

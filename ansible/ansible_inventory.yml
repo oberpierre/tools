@@ -1,0 +1,2 @@
+# Provide your host configuration below (see https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html)
+# you may also create/append to this file during your CI/CD pipeline steps
