@@ -1,0 +1,5 @@
+- name: Installing K8s on podman
+  hosts: all
+
+  roles:
+    - podman
