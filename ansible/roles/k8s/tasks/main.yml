@@ -7,4 +7,6 @@
     name: install
   vars:
     packages:
+      - kubelet
+      - kubeadm
       - kubectl
