@@ -6,5 +6,11 @@
   vars:
     packages:
       - podman
-      # provided user-mode networking for unprivileged network  
+      # provided user-mode networking for unprivileged network
       - slirp4netns
+
+- name: Enable podman socket
+  ansible.builtin.systemd_service:
+    name: podman.socket
+    state: started
+    enabled: true
