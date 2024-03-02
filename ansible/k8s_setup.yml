@@ -1,7 +1,7 @@
-- name: Installing K8s on podman
+- name: Installing K8s with CRI-O
   hosts: all
   become: true
 
   roles:
-    - podman
+    - cri-o
     - k8s
