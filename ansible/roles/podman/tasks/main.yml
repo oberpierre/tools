@@ -13,4 +13,6 @@
   ansible.builtin.systemd_service:
     name: podman.socket
     state: started
+    scope: "user"
     enabled: true
+  become: false
