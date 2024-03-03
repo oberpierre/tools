@@ -1,0 +1,15 @@
+- name: Installing minikube
+  hosts: controller
+
+  roles:
+    - podman
+    - containerd
+    - minikube
+
+  tasks:
+  - name: Installing kubectl
+    import_role:
+      name: install
+    vars:
+      packages:
+        - kubectl

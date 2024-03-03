@@ -1,0 +1,19 @@
+- name: Downloading containerd binaries
+  unarchive:
+    src: https://github.com/containerd/containerd/releases/download/v1.7.13/containerd-1.7.13-linux-amd64.tar.gz
+    dest: /usr/local
+    remote_src: yes
+  become: true
+
+- name: Create /opt/cni/bin
+  file:
+    path: /opt/cni/bin
+    state: directory
+  become: true
+
+- name: Downloading CNI plugins
+  unarchive:
+    src: https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-amd64-v1.4.0.tgz
+    dest: /opt/cni/bin
+    remote_src: yes
+  become: true
