@@ -1,0 +1,11 @@
+# Initial server setup (see: https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-22-04)
+- name: Initial server setup
+  hosts: all
+
+  tasks:
+  - name: Add the user and append to appropriate groups
+    user:
+      name: "{{ item.name }}"
+      groups: "{{ item.groups|default('') }}"
+      append: yes
+    with_items: "{{ create_users|default([]) }}"
