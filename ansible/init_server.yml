@@ -6,6 +6,8 @@
   - name: Add the user and append to appropriate groups
     user:
       name: "{{ item.name }}"
-      groups: "{{ item.groups|default('') }}"
+      shell: /bin/bash
+      groups: "{{ item.groups | default('') }}"
       append: yes
-    with_items: "{{ create_users|default([]) }}"
+    with_items: "{{ create_users | default([]) }}"
+
