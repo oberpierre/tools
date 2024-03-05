@@ -2,6 +2,7 @@
 - name: Initial server setup
   user: root
   hosts: all
+  # See vars/example_user_vault.yml on how to provide passwords for your users
   vars_files:
     - vars/user_vault.yml
 
