@@ -9,7 +9,7 @@
   - name: Add the user and append to appropriate groups
     user:
       name: "{{ item.name }}"
-      shell: /bin/bash
+      shell: "{{ item.shell | default('/bin/bash') }}"
       groups: "{{ item.groups | default('') }}"
       password: "{{ item.password }}"
       append: yes
