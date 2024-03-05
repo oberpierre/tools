@@ -16,3 +16,8 @@
     with_items: "{{ create_users | default([]) }}"
     no_log: true
 
+  - name: Adding ssh keys to users authorized_keys
+    authorized_key:
+      user: "{{ item.name }}"
+      key: "{{ lookup('file', item.file) }}"
+    with_items: "{{ ssh_pub_files | default([]) }}"
