@@ -5,7 +5,7 @@
 # > ansible-playbook -i example_inventory.yml --user root --ask-vault-pass --ask-pass create_users.yml
 # If you have a user with elevated priviliges uncomment the become directives below and then execute the command with the corresponding user (admin in our example) as follows:
 # > ansible-playbook -i example_inventory.yml --user admin --ask-vault-pass --ask-become-pass create_users.yml
-- name: Initial server setup
+- name: Creating users
   hosts: all
   # See vars/example_user_vault.yml on how to provide passwords for your users
   vars_files:
