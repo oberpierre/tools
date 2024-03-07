@@ -1,0 +1,15 @@
+- name: Enabling firewall with configuration for OpenSSH
+  hosts: all
+
+  tasks:
+  - name: Allowing access to OpenSSH
+    ufw:
+      rule: allow
+      name: OpenSSH
+    become: true
+
+  - name: Enable UFW and denying traffic to unallowed ports/apps
+    ufw:
+      state: enabled
+      policy: deny
+    become: true

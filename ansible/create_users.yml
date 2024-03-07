@@ -1,0 +1,31 @@
+# Initial server setup (see: https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-22-04)
+# I recommend running every playbook with a non-root user that is able to elevate his priviliges, with SSH keys.
+# However, this playbook assumes that you are using a root user with a password, as you may not have yet set up a user with elevated privileges or SSH keys.
+# Therefore to run the playbook you'd use (replace inventory file):
+# > ansible-playbook -i example_inventory.yml --user root --ask-vault-pass --ask-pass create_users.yml
+# If you have a user with elevated priviliges uncomment the become directives below and then execute the command with the corresponding user (admin in our example) as follows:
+# > ansible-playbook -i example_inventory.yml --user admin --ask-vault-pass --ask-become-pass create_users.yml
+- name: Creating users
+  hosts: all
+  # See vars/example_user_vault.yml on how to provide passwords for your users
+  vars_files:
+    - vars/user_vault.yml
+
+  tasks:
+  - name: Add the user and append to appropriate groups
+    user:
+      name: "{{ item.name }}"
+      shell: "{{ item.shell | default('/bin/bash') }}"
+      groups: "{{ item.groups | default('') }}"
+      password: "{{ item.password }}"
+      append: yes
+    with_items: "{{ create_users | default([]) }}"
+    no_log: true
+    # become: true
+
+  - name: Adding ssh keys to users authorized_keys
+    authorized_key:
+      user: "{{ item.name }}"
+      key: "{{ lookup('file', item.file) }}"
+    with_items: "{{ ssh_pub_files | default([]) }}"
+    # become: true

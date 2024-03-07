@@ -1,0 +1,10 @@
+# Python virtual env for python ansible installation
+.venv
+
+# Prevent inclusion of ansible inventory and variable files, except for examples
+ansible/*inventory*
+!ansible/example*
+ansible/host_vars/*
+!ansible/host_vars/example*
+ansible/vars/*
+!ansible/vars/example*
