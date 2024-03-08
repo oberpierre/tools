@@ -18,7 +18,7 @@
         apiVersion: kubeadm.k8s.io/v1beta3
         kind: InitConfiguration
         nodeRegistration:
-          criSocket: "unix:///var/run/crio/crio.sock"
+          criSocket: "unix:///var/run/containerd/containerd.sock"
         ---
         apiVersion: kubeadm.k8s.io/v1beta3
         kind: ClusterConfiguration
@@ -27,7 +27,7 @@
         ---
         apiVersion: kubelet.config.k8s.io/v1beta1
         kind: KubeletConfiguration
-        cgroupDriver: "systemd"
+        cgroupDriver: systemd
 
   - name: Initializing cluster
     shell: kubeadm init --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log

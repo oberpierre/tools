@@ -41,3 +41,19 @@
 
 - name: Reloading sysctl params
   shell: sysctl --system
+
+- name: Adding default containerd configuration
+  shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+
+- name: Setting SystemdCgroup to true
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: '^(\s+)SystemdCgroup = false$'
+    replace: '\1SystemdCgroup = true'
+
+- name: Enabling containerd service
+  service:
+    name: containerd
+    state: restarted
+    enabled: yes
+

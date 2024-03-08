@@ -1,7 +1,7 @@
-- name: Installing K8s with CRI-O
+# NOTE: containerd is required to be installed (i.e. using install_docker.yml), but will be configured for use with K8s
+- name: Installing K8s using containerd
   hosts: all
   become: true
 
   roles:
-    - cri-o
     - k8s
