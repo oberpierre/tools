@@ -1,0 +1,44 @@
+  # See https://docs.nginx.com/nginx-ingress-controller/installation/installing-nic/installation-with-manifests/
+- name: Deploying NGINX Ingress Controller
+  hosts: controller
+  vars:
+    nginx_ingress_version: v3.4.3
+
+  tasks:
+  - name: Creating .kube folder
+    ansible.builtin.file:
+      path: "{{ ansible_env.HOME }}/.kube"
+      state: directory
+      mode: "0755"
+
+  - name: Cloning NGINX Ingress repository
+    ansible.builtin.git:
+      repo: https://github.com/nginxinc/kubernetes-ingress.git
+      dest: "{{ ansible_env.HOME }}/.kube/git-nginx-ingress"
+      single_branch: yes
+      version: "{{ nginx_ingress_version }}"
+
+  - name: Setting up role-based access control
+    ansible.builtin.shell: kubectl apply -f {{ item }}
+    loop:
+      - "{{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/common/ns-and-sa.yaml"
+      - "{{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/rbac/rbac.yaml"
+
+  - name: Creating common resources
+    ansible.builtin.shell: kubectl apply -f {{ item }}
+    loop:
+      - "{{ ansible_env.HOME }}/.kube/git-nginx-ingress/examples/shared-examples/default-server-secret/default-server-secret.yaml"
+      - "{{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/common/nginx-config.yaml"
+      - "{{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/common/ingress-class.yaml"
+
+  - name: Creating core NGINX CRDs
+    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/git-nginx-ingress/deploy/crds.yaml
+
+  - name: Changing Pod CLI args
+    ansible.builtin.replace:
+      path: "{{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/deployment/nginx-ingress.yaml"
+      regexp: '^(\s+)#- -default-server-tls-secret=$(POD_NAMESPACE)/default-server-secret$'
+      replace: '\1- -default-server-tls-secret=$(POD_NAMESPACE)/default-server-secret'
+
+  - name: Creating core NGINX CRDs
+    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/deployment/nginx-ingress.yaml
