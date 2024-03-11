@@ -5,3 +5,15 @@
 
   roles:
     - k8s
+
+- name: Installing kubectl
+  hosts: controller
+  become: true
+
+  tasks:
+  - name: Installing kubectl
+    import_role:
+      name: install
+    vars:
+      packages:
+        - kubectl

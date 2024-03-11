@@ -9,4 +9,3 @@
     packages:
       - kubelet
       - kubeadm
-      - kubectl
