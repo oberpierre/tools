@@ -57,3 +57,13 @@
     state: restarted
     enabled: yes
 
+# See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ common ports for controller and worker
+- name: Allowing access to K8s port
+  ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    comment: "{{ item.comment }}"
+    proto: tcp
+  with_items:
+    - port: "10250"
+      comment: "Kubelet API"
