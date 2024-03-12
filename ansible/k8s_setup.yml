@@ -17,3 +17,24 @@
     vars:
       packages:
         - kubectl
+
+  # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
+  - name: Allowing K8s control ports
+    ufw:
+      rule: allow
+      port: "{{ item.port }}"
+      comment: "{{ item.comment }}"
+      proto: tcp
+    with_items:
+      - port: "6443"
+        comment: "Kubernetes API server"
+      - port: "2379:2380"
+        comment: "etcd server client API"
+      - port: "10257"
+        comment: "kube-controller-manager"
+      - port: "10259"
+        comment: "kube-scheduler"
+
+  - name: Reloading ufw rules
+    ufw:
+      state: reloaded
