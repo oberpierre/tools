@@ -1,9 +1,0 @@
-- name: OS switch
-  import_tasks: debian.yml
-  when: ansible_facts['os_family']|lower == 'debian'
-
-- name: Setting rootless mode
-  shell: minikube config set rootless true
-
-- name: Starting minikube
-  shell: minikube start --driver=podman --container-runtime=containerd
