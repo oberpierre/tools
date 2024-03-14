@@ -42,3 +42,15 @@
 
   - name: Creating core NGINX CRDs
     ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/deployment/nginx-ingress.yaml
+
+  # It is recommended to use LoadBalancer service if supported (i.e. in cloud offerings), your services will be exposed using the load balancers IP. You may try deploying LoadBalancer first and check using:
+  # > kubectl get svc nginx-ingress --namespace=nginx-ingress
+  # If the EXTERNAL-IP field is stuck at <pending> your cluster may not support LoadBalancer services, you can use a DaemonSet below
+  - name: Creating nginx-ingress LoadBalancer service
+    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/service/loadbalancer.yaml
+
+  # If you are using a VPS or server that does not support LoadBalancer service, use the DaemonSet instead, it will expose port 80 and 443 on the IP addresses,
+  # on every node in the cluster. 
+  # - name: Creating nginx-ingress DaemonSet
+  #   ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/git-nginx-ingress/deployments/daemon-set/nginx-ingress.yaml
+
