@@ -1,0 +1,46 @@
+# https://metallb.universe.tf/installation/
+- name: Installing MetalLB
+  hosts: controller
+
+  tasks:
+  - name: Setting strictARP to true
+    ansible.builtin.shell: |
+      kubectl get configmap kube-proxy -n kube-system -o yaml | \
+      sed -e "s/strictARP: false/strictARP: true/" | \
+      kubectl apply -f - -n kube-system
+
+  - name: Check if MetalLB is installed
+    shell: kubectl get pods -A | awk '$1 == "metallb-system"'
+    register: metallb_running
+
+  - name: Installing MetalLB
+    ansible.builtin.shell: kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.3/config/manifests/metallb-native.yaml
+    when: metallb_running.stdout == ""
+
+  - name: Creating .kube folder
+    ansible.builtin.file:
+      path: "{{ ansible_env.HOME }}/.kube"
+      state: directory
+      mode: "0755"
+
+  - name: Configuring MetalLB address pool and advertisment
+    ansible.builtin.copy:
+      dest: "{{ ansible_env.HOME }}/.kube/metallb.yml"
+      content: |
+        apiVersion: metallb.io/v1beta1
+        kind: IPAddressPool
+        metadata:
+          name: public-pool
+          namespace: metallb-system
+        spec:
+          addresses: {{metallb_addresses}}
+        ---
+        apiVersion: metallb.io/v1beta1
+        kind: L2Advertisement
+        metadata:
+          name: public-advertisment
+          namespace: metallb-system
+
+
+  - name: Apllying MetalLB configuration
+    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/metallb.yml
