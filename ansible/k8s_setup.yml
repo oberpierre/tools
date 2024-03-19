@@ -6,6 +6,26 @@
   roles:
     - k8s
 
+- name: Enabling worker ports
+  hosts: worker
+  become: true
+
+  tasks:
+  # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ worker nodes
+  - name: Allowing K8s worker ports
+    ufw:
+      rule: allow
+      port: "{{ item.port }}"
+      comment: "{{ item.comment }}"
+      proto: tcp
+    with_items:
+      - port: "30000:32767"
+        comment: "NodePort Services"
+
+  - name: Reloading ufw rules
+    ufw:
+      state: reloaded
+
 - name: Installing kubectl
   hosts: controller
   become: true
