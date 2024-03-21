@@ -1,0 +1,60 @@
+# NOTE: containerd is required to be installed (i.e. using install_docker.yml), but will be configured for use with K8s
+- name: Installing K8s using containerd
+  hosts: all
+  become: true
+
+  roles:
+    - k8s
+
+- name: Enabling worker ports
+  hosts: worker
+  become: true
+
+  tasks:
+  # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ worker nodes
+  - name: Allowing K8s worker ports
+    ufw:
+      rule: allow
+      port: "{{ item.port }}"
+      comment: "{{ item.comment }}"
+      proto: tcp
+    with_items:
+      - port: "30000:32767"
+        comment: "NodePort Services"
+
+  - name: Reloading ufw rules
+    ufw:
+      state: reloaded
+
+- name: Installing kubectl
+  hosts: controller
+  become: true
+
+  tasks:
+  - name: Installing kubectl
+    import_role:
+      name: install
+    vars:
+      packages:
+        - kubectl
+
+  # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
+  - name: Allowing K8s control ports
+    ufw:
+      rule: allow
+      port: "{{ item.port }}"
+      comment: "{{ item.comment }}"
+      proto: tcp
+    with_items:
+      - port: "6443"
+        comment: "Kubernetes API server"
+      - port: "2379:2380"
+        comment: "etcd server client API"
+      - port: "10257"
+        comment: "kube-controller-manager"
+      - port: "10259"
+        comment: "kube-scheduler"
+
+  - name: Reloading ufw rules
+    ufw:
+      state: reloaded

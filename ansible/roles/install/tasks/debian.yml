@@ -1,0 +1,8 @@
+- name: Updating apt cache
+  apt:
+    update_cache: yes
+
+- name: "Install packages: {{ packages }}"
+  apt:
+    name: "{{ packages }}"
+    state: latest
