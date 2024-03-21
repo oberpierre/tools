@@ -1,9 +1,96 @@
   # See https://kubernetes.github.io/ingress-nginx/deploy/
 - name: Deploying ingress-nginx Controller
   hosts: controller
+  vars:
+    # Set test_deployment to true and change test_domain to your actual domain to deploy a hello world container (nginxdemos/nginx-hello) for verification
+    test_deployment: false
+    test_domain: test.example.com
 
   tasks:
   - name: Deploying ingress-nginx
     ansible.builtin.shell: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml
 
+  # Uncomment below to verify if your ingress-nginx controller is working properly by deploying a test website
+  - name: Creating .kube folder
+    ansible.builtin.file:
+      path: "{{ ansible_env.HOME }}/.kube"
+      state: directory
+      mode: "0755"
+    when: test_deployment  
 
+  - name: Creating hello-world container deployment
+    ansible.builtin.copy:
+      dest: "{{ ansible_env.HOME }}/.kube/hello-world-web.yml"
+      content: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: hello-world-web-deployment
+          labels:
+            app: hello-world-web
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: hello-world-web
+          template:
+            metadata:
+              labels:
+                app: hello-world-web
+            spec:
+              containers:
+              - name: hello-world-web
+                image: nginxdemos/nginx-hello:latest
+                ports:
+                - containerPort: 8080
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: hello-world-web-svc
+        spec:
+          selector:
+            app: hello-world-web
+          ports:
+            - protocol: TCP
+              port: 80
+              targetPort: 8080
+              name: http
+        ---
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: hello-world-web-ingress
+        spec:
+          ingressClassName: nginx
+          rules:
+          - host: {{ test_domain }}
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: hello-world-web-svc
+                    port:
+                      number: 80
+    when: test_deployment  
+
+  - name: Deploying hello-world container for testing
+    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/hello-world-web.yml
+    when: test_deployment
+
+  - name: Pausing for verification
+    ansible.builtin.pause:
+      prompt: Verify if you can publicly reach {{ test_domain }}. Press [Enter] to continue
+    when: test_deployment
+
+  - name: Removing hello-world container
+    ansible.builtin.shell: kubectl delete -f {{ ansible_env.HOME }}/.kube/hello-world-web.yml
+    when: test_deployment
+
+  - name: Removing hello-world container configuration
+    ansible.builtin.file:
+      path: "{{ ansible_env.HOME }}/.kube/hello-world-web.yml"
+      state: absent
+    when: test_deployment
