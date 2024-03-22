@@ -1,6 +1,6 @@
 # Creating kubeadm cluster (see https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
 - name: Initializing K8s cluster on controller
-  hosts: controller
+  hosts: init_controller
 
   tasks:
   - name: Creating .kube folder
@@ -44,11 +44,5 @@
       group: "{{ ansible_env.USER }}"
     become: true
 
-  - name: Check if network is running
-    shell: kubectl get pods --namespace kube-flannel | awk '$2 == "1/1" && $3 == "Running"'
-    register: dns_running
-
   - name: Installing pod network add-on
     shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml >> {{ ansible_env.HOME }}/.kube/network_setup.log
-    when: dns_running.stdout == ""
-
