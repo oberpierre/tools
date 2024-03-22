@@ -8,4 +8,4 @@ create_users:
     shell: /usr/sbin/nologin
 ssh_pub_files:
   - name: admin
-    file: ~/.ssh/id_rsa.pub
+    file: ~/.ssh/admin_id_rsa.pub
