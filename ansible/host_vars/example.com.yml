@@ -9,3 +9,5 @@ create_users:
 ssh_pub_files:
   - name: admin
     file: ~/.ssh/admin_id_rsa.pub
+
+# Specific control plane variables used for configuration below:
