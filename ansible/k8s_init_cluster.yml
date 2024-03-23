@@ -30,7 +30,7 @@
         cgroupDriver: systemd
 
   - name: Initializing cluster
-    shell: kubeadm init --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
+    shell: kubeadm init --node-name {{ node_name | default(inventory_hostname) }} --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
     args:
       creates: /etc/kubernetes/admin.conf
     become: true

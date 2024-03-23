@@ -12,7 +12,7 @@
 
   tasks:
   - name: Join cluster as control plane if not the init_controller
-    shell: "{{ join_cmd.stdout }} --control-plane"
+    shell: "{{ join_cmd.stdout }} --node-name {{ node_name | default(inventory_hostname) }} --control-plane"
     # Only join if the current controller is not the init_controller as it was used to initialized the cluster, therefore is already part of it
     when: inventory_hostname not in groups['init_controller']
 
@@ -25,17 +25,17 @@
       is_control_plane: inventory_hostname in groups['controller']
 
   - name: Allowing pods to be run on control-plane if necessary
-    shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane- --validate=ignore
+    shell: kubectl taint nodes {{ node_name | default(inventory_hostname) }} node-role.kubernetes.io/control-plane- --validate=ignore
     # only runs if the target is also a control plane, this is disabled by default for security therefore not recommended,
     # but may be required in a single machine cluster
     when: is_control_plane
 
   - name: Allowing control-plane to be targed by load-balancer
-    shell: kubectl label nodes --all node.kubernetes.io/exclude-from-external-load-balancers- 
+    shell: kubectl label nodes {{ node_name | default(inventory_hostname) }} node.kubernetes.io/exclude-from-external-load-balancers- 
     when: is_control_plane
 
   - name: Joing cluster
-    shell: "{{ join_cmd.stdout }}"
+    shell: "{{ join_cmd.stdout }} --node-name {{ node_name | default(inventory_hostname) }}"
     become: true
     # control planes are already part of the cluster as they initialized it so no need to join
     when: not is_control_plane
