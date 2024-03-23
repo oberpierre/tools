@@ -1,37 +1,28 @@
-# Docker installation as per official guide (see https://docs.docker.com/engine/install/)
-- name: Installing Docker
+# containerd installation as per official guide (see https://github.com/containerd/containerd/blob/main/docs/getting-started.md)
+- name: Installing containerd
   hosts: all
   become: true
 
   tasks:
-  - name: Add docker repositories GPG key
+  - name: Adding Docker repositories GPG key
     apt_key:
       url: https://download.docker.com/linux/{{ ansible_distribution|lower }}/gpg
       state: present
 
-  - name: Add docker repository
+  - name: Adding Docker repository
     apt_repository:
       repo: deb [arch=amd64] https://download.docker.com/linux/{{ ansible_distribution|lower }} {{ ansible_distribution_release }} stable
       state: present
 
-  - name: Installing docker community edition
+  - name: Installing containerd.io
     import_role:
       name: install
     vars:
       packages:
-        - docker-ce
-        - docker-ce-cli
         - containerd.io
-        - docker-buildx-plugin
-        - docker-compose-plugin
 
-  - name: Adding current user to group docker
-    user:
-      name: "{{ ansible_user }}"
-      groups: docker
-      append: yes
-
-  - name: Start docker service
+  - name: Start containerd service
     service:
-      name: docker
+      name: containerd
       state: started
+      enabled: true
