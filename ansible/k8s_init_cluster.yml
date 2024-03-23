@@ -42,6 +42,7 @@
       dest: "{{ ansible_env.HOME }}/.kube/config"
       owner: "{{ ansible_env.USER }}"
       group: "{{ ansible_env.USER }}"
+      mode: "0600"
     become: true
 
   - name: Installing pod network add-on
