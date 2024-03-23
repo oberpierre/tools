@@ -1,11 +1,20 @@
-# Joining K8s cluster (see https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
+# Joining K8s cluster (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/)
 - name: Generating K8s token and join command
-  hosts: controller
+  hosts: init_controller
   
   tasks:
   - name: Generate join token and store join command
     shell: kubeadm token create --print-join-command
     register: join_cmd
+
+- name: Making control planes join the cluster
+  hosts: controller
+
+  tasks:
+  - name: Join cluster as control plane if not the init_controller
+    shell: "{{ join_cmd.stdout }} --control-plane"
+    # Only join if the current controller is not the init_controller as it was used to initialized the cluster, therefore is already part of it
+    when: inventory_hostname not in groups['init_controller']
 
 - name: Making worker nodes join the cluster
   hosts: worker
@@ -13,11 +22,11 @@
   tasks:
   - name: Check if node is also a control-plane
     set_fact: 
-      is_control_plane: groups['controller'] | select('equalto', inventory_hostname) | length > 0
+      is_control_plane: inventory_hostname in groups['controller']
 
   - name: Allowing pods to be run on control-plane if necessary
     shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane- --validate=ignore
-    # only runs if the target is also a control-plane, this is disabled by default for security therefore not recommended,
+    # only runs if the target is also a control plane, this is disabled by default for security therefore not recommended,
     # but may be required in a single machine cluster
     when: is_control_plane
 
