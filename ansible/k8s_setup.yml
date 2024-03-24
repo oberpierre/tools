@@ -1,7 +1,6 @@
 # NOTE: containerd is required to be installed (i.e. using install_docker.yml), but will be configured for use with K8s
 - name: Installing K8s with containerd
   hosts: all
-  become: true
 
   roles:
     - containerd
@@ -22,14 +21,15 @@
     with_items:
       - port: "30000:32767"
         comment: "NodePort Services"
+    become: true
 
   - name: Reloading ufw rules
     ufw:
       state: reloaded
+    become: true
 
 - name: Installing kubectl
   hosts: controller
-  become: true
 
   tasks:
   - name: Installing kubectl
@@ -55,7 +55,9 @@
         comment: "kube-controller-manager"
       - port: "10259"
         comment: "kube-scheduler"
+    become: true
 
   - name: Reloading ufw rules
     ufw:
       state: reloaded
+    become: true
