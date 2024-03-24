@@ -1,8 +1,6 @@
-- name: Updating apt cache
-  apt:
-    update_cache: yes
-
 - name: "Install packages: {{ packages }}"
-  apt:
+  ansible.builtin.apt:
     name: "{{ packages }}"
     state: latest
+    update_cache: "{{ update_cache | default(true) }}"
+  become: true
