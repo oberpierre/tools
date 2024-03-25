@@ -6,6 +6,15 @@
     - containerd
     - k8s
 
+  tasks:
+  - name: Installing jq
+    import_role:
+      name: install
+    vars:
+      packages:
+        - jq
+    become: true
+
 - name: Enabling worker ports
   hosts: worker
   become: true
