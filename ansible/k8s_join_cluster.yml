@@ -48,17 +48,11 @@
       - is_control_plane
       - has_taint.stdout == "true"
 
-  - name: Checking if node is excluded from load-balancer
-    shell: kubectl get node {{ node_name_with_default }} -o json | jq '.metadata.labels // {} | has("node.kubernetes.io/exclude-from-external-load-balancers")'
-    register: is_excluded
-    when: is_control_plane
-    changed_when: false
-
   - name: Allowing control-plane to be targed by load-balancer
     shell: kubectl label node {{ node_name_with_default }} node.kubernetes.io/exclude-from-external-load-balancers- 
-    when:
-      - is_control_plane
-      - is_excluded.stdout == "true"
+    register: label_removed
+    changed_when: "'not found' not in label_removed.stdout"
+    when: is_control_plane
 
   - name: Joining cluster
     shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }}"
