@@ -13,7 +13,7 @@
 
   tasks:
   - name: Add the user and append to appropriate groups
-    user:
+    ansible.builtin.user:
       name: "{{ item.name }}"
       shell: "{{ item.shell | default('/bin/bash') }}"
       groups: "{{ item.groups | default('') }}"
@@ -24,7 +24,7 @@
     # become: true
 
   - name: Adding ssh keys to users authorized_keys
-    authorized_key:
+    ansible.posix.authorized_key:
       user: "{{ item.name }}"
       key: "{{ lookup('file', item.file) }}"
     with_items: "{{ ssh_pub_files | default([]) }}"

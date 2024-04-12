@@ -4,11 +4,11 @@
   
   tasks:
   - name: Generate join token and store join command
-    shell: kubeadm token create --print-join-command
+    ansible.builtin.shell: kubeadm token create --print-join-command
     register: join_cmd
 
   - name: Getting cluster nodes
-    shell: kubectl get nodes | awk 'NR > 1 {print $1}'
+    ansible.builtin.shell: kubectl get nodes | awk 'NR > 1 {print $1}'
     register: nodes
     changed_when: false
 
@@ -19,7 +19,7 @@
 
   tasks:
   - name: Join new controller nodes as control plane
-    shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }} --control-plane"
+    ansible.builtin.shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }} --control-plane"
     # Only join if the current controller is not part of the cluster already, as indicated by `kubectl get nodes`, as init_controller MUST be part of 
     #  the cluster already it's node name will be included in the list as well.
     when: node_name_with_default not in nodes.stdout_lines
@@ -31,17 +31,17 @@
 
   tasks:
   - name: Checking if node is also a control-plane
-    set_fact: 
+    ansible.builtin.set_fact: 
       is_control_plane: inventory_hostname in groups['controller']
 
   - name: Checking if node has control-plane taint
-    shell: kubectl get node {{ node_name_with_default }} -o json | jq '.spec.taints? // [] | map(.key) | contains(["node-role.kubernetes.io/control-plane"])'
+    ansible.builtin.shell: kubectl get node {{ node_name_with_default }} -o json | jq '.spec.taints? // [] | map(.key) | contains(["node-role.kubernetes.io/control-plane"])'
     register: has_taint
     when: is_control_plane
     changed_when: false
 
   - name: Allowing pods to be run on control-plane if necessary
-    shell: kubectl taint node {{ node_name_with_default }} node-role.kubernetes.io/control-plane- --validate=ignore
+    ansible.builtin.shell: kubectl taint node {{ node_name_with_default }} node-role.kubernetes.io/control-plane- --validate=ignore
     # only runs if the target is also a control plane, this is disabled by default for security therefore not recommended,
     # but may be required in a single machine cluster
     when:
@@ -49,13 +49,13 @@
       - has_taint.stdout == "true"
 
   - name: Allowing control-plane to be targed by load-balancer
-    shell: kubectl label node {{ node_name_with_default }} node.kubernetes.io/exclude-from-external-load-balancers- 
+    ansible.builtin.shell: kubectl label node {{ node_name_with_default }} node.kubernetes.io/exclude-from-external-load-balancers- 
     register: label_removed
     changed_when: "'not found' not in label_removed.stdout"
     when: is_control_plane
 
   - name: Joining cluster
-    shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }}"
+    ansible.builtin.shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }}"
     when:
       # the not control plane check is necessary as this may be a newly joined controller added by the previous play, therefore may not yet have been part of the `kubectl get nodes` output
       - not is_control_plane

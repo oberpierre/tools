@@ -3,13 +3,13 @@
 
   tasks:
   - name: Allowing access to OpenSSH
-    ufw:
+    community.general.ufw:
       rule: allow
       name: OpenSSH
     become: true
 
   - name: Enable UFW and denying traffic to unallowed ports/apps
-    ufw:
+    community.general.ufw:
       state: enabled
       policy: deny
     become: true

@@ -8,7 +8,7 @@
 
   tasks:
   - name: Installing jq
-    import_role:
+    ansible.builtin.import_role:
       name: install
     vars:
       packages:
@@ -22,7 +22,7 @@
   tasks:
   # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ worker nodes
   - name: Allowing K8s worker ports
-    ufw:
+    community.general.ufw:
       rule: allow
       port: "{{ item.port }}"
       comment: "{{ item.comment }}"
@@ -33,7 +33,7 @@
     become: true
 
   - name: Reloading ufw rules
-    ufw:
+    community.general.ufw:
       state: reloaded
     become: true
 
@@ -42,7 +42,7 @@
 
   tasks:
   - name: Installing kubectl
-    import_role:
+    ansible.builtin.import_role:
       name: install
     vars:
       packages:
@@ -50,7 +50,7 @@
 
   # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
   - name: Allowing K8s control ports
-    ufw:
+    community.general.ufw:
       rule: allow
       port: "{{ item.port }}"
       comment: "{{ item.comment }}"
@@ -67,6 +67,6 @@
     become: true
 
   - name: Reloading ufw rules
-    ufw:
+    community.general.ufw:
       state: reloaded
     become: true
