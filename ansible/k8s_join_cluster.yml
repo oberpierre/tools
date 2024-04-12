@@ -56,6 +56,8 @@
 
   - name: Joining cluster
     shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }}"
-    # control planes are already part of the cluster as they initialized it so no need to join
-    when: node_name_with_default not in nodes.stdout_lines
+    when:
+      # the not control plane check is necessary as this may be a newly joined controller added by the previous play, therefore may not yet have been part of the `kubectl get nodes` output
+      - not is_control_plane
+      - node_name_with_default not in nodes.stdout_lines
     become: true
