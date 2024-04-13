@@ -1,6 +1,6 @@
 # NOTE: containerd is required to be installed (i.e. using install_docker.yml), but will be configured for use with K8s
 - name: Installing K8s with containerd
-  hosts: all
+  hosts: controller,worker
 
   roles:
     - containerd
