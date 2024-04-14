@@ -1,0 +1,13 @@
+- name: Adding Helm apt-key
+  ansible.builtin.get_url:
+    url: https://baltocdn.com/helm/signing.asc
+    dest: /etc/apt/keyrings/helm.asc
+    mode: "0644"
+    force: true
+  become: true
+
+- name: Adding Helm apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/helm.asc] https://baltocdn.com/helm/stable/debian/ all main"
+    state: present
+  become: true
