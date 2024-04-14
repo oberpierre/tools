@@ -16,8 +16,8 @@ You need to install Ansible on your control node (the one you intend to execute 
     > You will lose access to the server, if you have not yet set up a user with SSH keys (using [`create_users.yml`](./create_users.yml) or otherwise)!
 - **Kubernetes**:
   - [`k8s_setup.yml`](./k8s_setup.yml): Satisfying Kubernetes prerequisites by installing container runtime, open required ports, etc.
-  - [`k8s_setup_controller.yml`](./k8s_setup_controller.yml): Initializing cluster using kubeadm and installing container network interface (CNI) 
-  - [`k8s_setup_worker.yml`](./k8s_setup_worker.yml): Joining the cluster for worker nodes. If a control plane is also serving as a worker, by being defined in the controller and worker list of your inventory file, it will "untaint" the control plane so it may be targeted by the scheduler to schedule pods.
+  - [`k8s_init_cluster.yml`](./k8s_init_cluster.yml): Initializing cluster using kubeadm and installing container network interface (CNI) 
+  - [`k8s_join_cluster.yml`](./k8s_join_cluster.yml): Joining the cluster for additional control plane and worker nodes. If a control plane is also serving as a worker, by being defined in the controller and worker list of your inventory file, it will "untaint" the control plane so it may be targeted by the scheduler to schedule pods.
     > Make sure you understand the security implications if you want to use you control plane as a worker! See: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#control-plane-node-isolation
 
 ## Usage
@@ -54,14 +54,14 @@ You need to install Ansible on your control node (the one you intend to execute 
         ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup.yml
         ```
 
-    - [`k8s_setup_controller.yml`](./k8s_setup_controller.yml):
+    - [`k8s_init_cluster.yml`](./k8s_init_cluster.yml):
         > To install prerequisites, run `k8s_setup.yml` first!
         ```
-        ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup_controller.yml
+        ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_init_cluster.yml
         ```
 
-    - [`k8s_setup_worker.yml`](./k8s_setup_worker.yml):
-        > Only run this after running `k8s_setup.yml` and `k8s_setup_controller.yml`!
+    - [`k8s_join_cluster.yml`](./k8s_join_cluster.yml):
+        > Only run this after running `k8s_setup.yml` and `k8s_init_cluster.yml`!
         ```
-        ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup_worker.yml
+        ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_join_cluster.yml
         ```

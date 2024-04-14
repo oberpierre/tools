@@ -1,10 +1,10 @@
 # Creating kubeadm cluster (see https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
 - name: Initializing K8s cluster on controller
-  hosts: controller
+  hosts: init_controller
 
   tasks:
   - name: Creating .kube folder
-    file:
+    ansible.builtin.file:
       path: "{{ ansible_env.HOME }}/.kube"
       state: directory
       mode: "0755"
@@ -12,7 +12,7 @@
   # Creating a kubeadm init config file (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-init/#config-file)
   # Adapt the configuration below as needed
   - name: Creating kubeadm config file
-    copy:
+    ansible.builtin.copy:
       dest: "{{ ansible_env.HOME }}/.kube/kubeadm-config.yml"
       content: |
         apiVersion: kubeadm.k8s.io/v1beta3
@@ -30,25 +30,20 @@
         cgroupDriver: systemd
 
   - name: Initializing cluster
-    shell: kubeadm init --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
+    ansible.builtin.shell: kubeadm init --node-name {{ node_name | default(inventory_hostname) }} --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
     args:
       creates: /etc/kubernetes/admin.conf
     become: true
 
   - name: Copying admin.conf to .kube
-    copy:
+    ansible.builtin.copy:
       remote_src: true
       src: /etc/kubernetes/admin.conf
       dest: "{{ ansible_env.HOME }}/.kube/config"
       owner: "{{ ansible_env.USER }}"
       group: "{{ ansible_env.USER }}"
+      mode: "0600"
     become: true
 
-  - name: Check if network is running
-    shell: kubectl get pods --namespace kube-flannel | awk '$2 == "1/1" && $3 == "Running"'
-    register: dns_running
-
   - name: Installing pod network add-on
-    shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml >> {{ ansible_env.HOME }}/.kube/network_setup.log
-    when: dns_running.stdout == ""
-
+    ansible.builtin.shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml >> {{ ansible_env.HOME }}/.kube/network_setup.log

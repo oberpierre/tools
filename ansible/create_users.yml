@@ -9,11 +9,11 @@
   hosts: all
   # See vars/example_user_vault.yml on how to provide passwords for your users
   vars_files:
-    - vars/user_vault.yml
+    - vars/example_user_vault.yml
 
   tasks:
   - name: Add the user and append to appropriate groups
-    user:
+    ansible.builtin.user:
       name: "{{ item.name }}"
       shell: "{{ item.shell | default('/bin/bash') }}"
       groups: "{{ item.groups | default('') }}"
@@ -24,7 +24,7 @@
     # become: true
 
   - name: Adding ssh keys to users authorized_keys
-    authorized_key:
+    ansible.posix.authorized_key:
       user: "{{ item.name }}"
       key: "{{ lookup('file', item.file) }}"
     with_items: "{{ ssh_pub_files | default([]) }}"

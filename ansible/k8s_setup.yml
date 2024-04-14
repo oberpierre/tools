@@ -1,10 +1,19 @@
 # NOTE: containerd is required to be installed (i.e. using install_docker.yml), but will be configured for use with K8s
-- name: Installing K8s using containerd
-  hosts: all
-  become: true
+- name: Installing K8s with containerd
+  hosts: controller,worker
 
   roles:
+    - containerd
     - k8s
+
+  tasks:
+  - name: Installing jq
+    ansible.builtin.import_role:
+      name: install
+    vars:
+      packages:
+        - jq
+    become: true
 
 - name: Enabling worker ports
   hosts: worker
@@ -13,7 +22,7 @@
   tasks:
   # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ worker nodes
   - name: Allowing K8s worker ports
-    ufw:
+    community.general.ufw:
       rule: allow
       port: "{{ item.port }}"
       comment: "{{ item.comment }}"
@@ -21,18 +30,19 @@
     with_items:
       - port: "30000:32767"
         comment: "NodePort Services"
+    become: true
 
   - name: Reloading ufw rules
-    ufw:
+    community.general.ufw:
       state: reloaded
+    become: true
 
 - name: Installing kubectl
   hosts: controller
-  become: true
 
   tasks:
   - name: Installing kubectl
-    import_role:
+    ansible.builtin.import_role:
       name: install
     vars:
       packages:
@@ -40,7 +50,7 @@
 
   # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
   - name: Allowing K8s control ports
-    ufw:
+    community.general.ufw:
       rule: allow
       port: "{{ item.port }}"
       comment: "{{ item.comment }}"
@@ -54,7 +64,9 @@
         comment: "kube-controller-manager"
       - port: "10259"
         comment: "kube-scheduler"
+    become: true
 
   - name: Reloading ufw rules
-    ufw:
+    community.general.ufw:
       state: reloaded
+    become: true

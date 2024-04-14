@@ -1,35 +1,40 @@
 - name: Adding K8s apt-key
-  get_url:
+  ansible.builtin.get_url:
     url: https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key
     dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
     mode: "0644"
     force: true
+  become: true
 
 - name: Adding K8s' apt repository
-  apt_repository:
+  ansible.builtin.apt_repository:
     repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /"
     state: present
+  become: true
 
 # Configuring prerequisites (see https://kubernetes.io/docs/setup/production-environment/container-runtimes/)
 - name: Creating /etc/modules-load.d/k8s.conf
-  copy:
+  ansible.builtin.copy:
     dest: /etc/modules-load.d/k8s.conf
     content: |
       overlay
       br_netfilter
+  become: true
 
 - name: Loading br_netfilter module
   community.general.modprobe:
     name: br_netfilter
     persistent: present
+  become: true
 
 - name: Loading overlay modules
   community.general.modprobe:
     name: overlay
     persistent: present
+  become: true
 
 - name: Forwarding IPV4 and enabling iptables to see bridged traffic
-  sysctl:
+  ansible.posix.sysctl:
     name: "{{ item }}"
     value: "1"
     sysctl_file: /etc/sysctl.d/k8s.conf
@@ -38,28 +43,35 @@
     - net.ipv4.ip_forward
     - net.bridge.bridge-nf-call-iptables
     - net.bridge.bridge-nf-call-ip6tables
+  become: true
 
 - name: Reloading sysctl params
-  shell: sysctl --system
+  ansible.builtin.shell: sysctl --system
+  become: true
 
 - name: Adding default containerd configuration
-  shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+  ansible.builtin.shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+  args:
+    creates: /etc/containerd/config.toml
+  become: true
 
 - name: Setting SystemdCgroup to true
-  replace:
+  ansible.builtin.replace:
     path: /etc/containerd/config.toml
     regexp: '^(\s+)SystemdCgroup = false$'
     replace: '\1SystemdCgroup = true'
+  become: true
 
-- name: Enabling containerd service
-  service:
+- name: Restarting containerd service
+  ansible.builtin.service:
     name: containerd
     state: restarted
-    enabled: yes
+    enabled: true
+  become: true
 
 # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ common ports for controller and worker
 - name: Allowing access to K8s port
-  ufw:
+  community.general.ufw:
     rule: allow
     port: "{{ item.port }}"
     comment: "{{ item.comment }}"
@@ -67,3 +79,4 @@
   with_items:
     - port: "10250"
       comment: "Kubelet API"
+  become: true
