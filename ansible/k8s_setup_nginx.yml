@@ -1,14 +1,17 @@
   # See https://kubernetes.github.io/ingress-nginx/deploy/
-- name: Deploying ingress-nginx Controller
-  hosts: controller
+- name: Deploying Ingress NGINX Controller
+  hosts: init_controller
   vars:
     # Set test_deployment to true and change test_domain to your actual domain to deploy a hello world container (nginxdemos/nginx-hello) for verification
     test_deployment: false
     test_domain: test.example.com
 
+  roles:
+  - helm
+
   tasks:
   - name: Deploying ingress-nginx
-    ansible.builtin.shell: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.0/deploy/static/provider/cloud/deploy.yaml
+    ansible.builtin.shell: helm upgrade --install ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx --namespace ingress-nginx --create-namespace
 
   # Uncomment below to verify if your ingress-nginx controller is working properly by deploying a test website
   - name: Creating .kube folder
