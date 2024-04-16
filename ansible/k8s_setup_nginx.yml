@@ -2,9 +2,8 @@
 - name: Deploying Ingress NGINX Controller
   hosts: init_controller
   vars:
-    # Set test_deployment to true and change test_domain to your actual domain to deploy a hello world container (nginxdemos/nginx-hello) for verification
-    test_deployment: false
-    test_domain: test.example.com
+    # Set test_domain to your domain name (e.g. test.example.com) to deploy a hello world container (nginxdemos/nginx-hello) for verification
+    test_domain: false
 
   roles:
   - helm
@@ -19,7 +18,7 @@
       path: "{{ ansible_env.HOME }}/.kube"
       state: directory
       mode: "0755"
-    when: test_deployment  
+    when: test_domain  
 
   - name: Creating hello-world container deployment
     ansible.builtin.copy:
@@ -77,23 +76,23 @@
                     name: hello-world-web-svc
                     port:
                       number: 80
-    when: test_deployment  
+    when: test_domain  
 
   - name: Deploying hello-world container for testing
     ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/hello-world-web.yml
-    when: test_deployment
+    when: test_domain
 
   - name: Pausing for verification
     ansible.builtin.pause:
       prompt: Verify if you can publicly reach {{ test_domain }}. Press [Enter] to continue
-    when: test_deployment
+    when: test_domain
 
   - name: Removing hello-world container
     ansible.builtin.shell: kubectl delete -f {{ ansible_env.HOME }}/.kube/hello-world-web.yml
-    when: test_deployment
+    when: test_domain
 
   - name: Removing hello-world container configuration
     ansible.builtin.file:
       path: "{{ ansible_env.HOME }}/.kube/hello-world-web.yml"
       state: absent
-    when: test_deployment
+    when: test_domain
