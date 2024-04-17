@@ -1,0 +1,16 @@
+# Deploying cert manager: https://cert-manager.io/docs/installation/helm/#4-install-cert-manager
+- name: Deploying cert-manager
+  hosts: init_controller
+
+  roles:
+  - helm
+
+  tasks:
+  - name: Installing/Upgrading cert-manager
+    ansible.builtin.shell: |
+      helm upgrade --install cert-manager cert-manager \
+        --repo https://charts.jetstack.io \
+        --namespace cert-manager \
+        --create-namespace \
+        --set installCRDs=true
+
