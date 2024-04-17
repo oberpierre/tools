@@ -15,7 +15,11 @@
       kubectl apply -f - -n kube-system
 
   - name: Installing/Upgrading MetalLB
-    ansible.builtin.shell: helm upgrade --install metallb metallb --repo https://metallb.github.io/metallb --namespace {{ metallb_namespace }} --create-namespace
+    ansible.builtin.shell: |
+      helm upgrade --install metallb metallb \
+        --repo https://metallb.github.io/metallb \
+        --namespace {{ metallb_namespace }} \
+        --create-namespace
 
   - name: Creating .kube folder
     ansible.builtin.file:

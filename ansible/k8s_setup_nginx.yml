@@ -10,9 +10,12 @@
 
   tasks:
   - name: Deploying ingress-nginx
-    ansible.builtin.shell: helm upgrade --install ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx --namespace ingress-nginx --create-namespace
+    ansible.builtin.shell: |
+      helm upgrade --install ingress-nginx ingress-nginx \
+        --repo https://kubernetes.github.io/ingress-nginx \
+        --namespace ingress-nginx \
+        --create-namespace
 
-  # Uncomment below to verify if your ingress-nginx controller is working properly by deploying a test website
   - name: Creating .kube folder
     ansible.builtin.file:
       path: "{{ ansible_env.HOME }}/.kube"
