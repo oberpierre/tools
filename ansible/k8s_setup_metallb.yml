@@ -1,6 +1,6 @@
 # See https://metallb.universe.tf/installation/
 - name: Installing MetalLB
-  hosts: controller
+  hosts: init_controller
   vars:
     metallb_namespace: metallb-system
 
