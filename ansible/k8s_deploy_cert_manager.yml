@@ -2,12 +2,14 @@
 - name: Deploying cert-manager
   hosts: init_controller
   vars:
+    # Set test_domain to your domain name (e.g. test.example.com) to deploy a hello world container (nginxdemos/nginx-hello) for verification
+    test_domain: false
     cluster_issuer_email: admin@example.com
     cluster_issuer_name: letsencrypt-prod
     cluster_issuer_server: https://acme-v02.api.letsencrypt.org/directory
 
-  roles:
-  - helm
+  # roles:
+  # - helm
 
   tasks:
   - name: Installing/Upgrading cert-manager
@@ -39,5 +41,95 @@
 
   - name: Applying cluster-issuer config
     ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
+
+  - name: Creating .kube folder
+    ansible.builtin.file:
+      path: "{{ ansible_env.HOME }}/.kube"
+      state: directory
+      mode: "0755"
+    when: test_domain  
+
+  - name: Creating hello-world container deployment
+    ansible.builtin.copy:
+      dest: "{{ ansible_env.HOME }}/.kube/hello-world-tls.yml"
+      content: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: hello-world-tls-deployment
+          labels:
+            app: hello-world-tls
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: hello-world-tls
+          template:
+            metadata:
+              labels:
+                app: hello-world-tls
+            spec:
+              containers:
+              - name: hello-world-tls
+                image: nginxdemos/nginx-hello:latest
+                ports:
+                - containerPort: 8080
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: hello-world-tls-svc
+        spec:
+          selector:
+            app: hello-world-tls
+          ports:
+            - protocol: TCP
+              port: 80
+              targetPort: 8080
+              name: http
+        ---
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          annotations:
+            cert-manager.io/cluster-issuer: {{ cluster_issuer_name }}
+          name: hello-world-tls-ingress
+        spec:
+          ingressClassName: nginx
+          tls:
+            - hosts:
+              - {{ test_domain }}
+              secretName: hello-world-tls
+          rules:
+          - host: {{ test_domain }}
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: hello-world-tls-svc
+                    port:
+                      number: 80
+    when: test_domain  
+
+  - name: Deploying hello-world container for testing
+    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/hello-world-tls.yml
+    when: test_domain
+
+  - name: Pausing for verification
+    ansible.builtin.pause:
+      prompt: Verify if you can publicly reach https://{{ test_domain }}. Press [Enter] to continue
+    when: test_domain
+
+  - name: Removing hello-world container
+    ansible.builtin.shell: kubectl delete -f {{ ansible_env.HOME }}/.kube/hello-world-tls.yml
+    when: test_domain
+
+  - name: Removing hello-world container configuration
+    ansible.builtin.file:
+      path: "{{ ansible_env.HOME }}/.kube/hello-world-tls.yml"
+      state: absent
+    when: test_domain
 
 
