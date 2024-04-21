@@ -36,11 +36,23 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
+  {% if tls_hosts is defined %}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ cluster_issuer_name }}
+  {% endif %}
   name: {{ app_name }}-ingress
 spec:
   ingressClassName: nginx
+  {% if tls_hosts is defined %}
+  tls:
+    - hosts:
+      {% for item in tls_hosts %}
+      - {{ item }}
+      {% endfor %}
+      secretName: {{ app_name }}-cert
+  {% endif %}
   rules:
-  {% for item in hosts %}
+  {% for item in tls_hosts | default(hosts) %}
   - host: {{ item }}
     http:
       paths:
