@@ -19,6 +19,7 @@ You need to install Ansible on your control node (the one you intend to execute 
   - [`k8s_init_cluster.yml`](./k8s_init_cluster.yml): Initializing cluster using kubeadm and installing container network interface (CNI) 
   - [`k8s_join_cluster.yml`](./k8s_join_cluster.yml): Joining the cluster for additional control plane and worker nodes. If a control plane is also serving as a worker, by being defined in the controller and worker list of your inventory file, it will "untaint" the control plane so it may be targeted by the scheduler to schedule pods.
     > Make sure you understand the security implications if you want to use you control plane as a worker! See: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#control-plane-node-isolation
+  - [`k8s_setup_metallb.yml`](./k8s_setup_metallb.yml): Enabling LoadBalancer type resources using [MetalLB](https://metallb.universe.tf/) implementation. This may be needed if you run a baremetal node or if your cluster is running on a cloud platform that is not supported by Kubernetes, expressed by resources of type LoadBalancer remaining in "pending" state indefinitely when created.
 
 ## Usage
 
@@ -64,4 +65,10 @@ You need to install Ansible on your control node (the one you intend to execute 
         > Only run this after running `k8s_setup.yml` and `k8s_init_cluster.yml`!
         ```
         ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_join_cluster.yml
+        ```
+
+    - [`k8s_setup_metallb.yml`](./k8s_setup_metallb.yml):
+        > The control plane running this job (init_controller) must be part of the kubernetes cluster! Configure metallb_addresses var in the vars or host_vars (see [`example.com.yml`](./host_vars/example.com.yml)).
+        ```
+        ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup_metallb.yml
         ```
