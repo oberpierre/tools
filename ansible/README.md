@@ -72,3 +72,9 @@ You need to install Ansible on your control node (the one you intend to execute 
         ```
         ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup_metallb.yml
         ```
+
+    - [`k8s_setup_nginx.yml`](./k8s_setup_nginx.yml):
+        > This playbook requires resources of type LoadBalancer to be supported in order for Ingress to route external traffic to your cluster's services. Ensure they are supported and, if necessary, enable them using `k8s_setup_metallb.yml`. You may also change the configuration in the playbook to support [NodePort services](https://kubernetes.github.io/ingress-nginx/deploy/baremetal/#over-a-nodeport-service), but this is not recommended except for testing or learning purposes.
+        ```
+        ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup_nginx.yml
+        ```
