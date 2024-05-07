@@ -5,7 +5,7 @@ The playbooks are designed to be run with a non-root user being able to elevate 
 
 ## Getting started
 
-You need to install Ansible on your control node (the one you intend to execute playbooks from and manage your servers). See [Ansible installation guide](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html#control-node-requirements).
+You need to install Ansible on the machine you intend to run the playbook from to manage your servers. See [Ansible installation guide](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html#control-node-requirements).
 
 ## Features
 
@@ -13,20 +13,21 @@ You need to install Ansible on your control node (the one you intend to execute 
 - **Security**: 
   - [`enable_ufw_ssh.yml`](./enable_ufw_ssh.yml): Enables UFW firewall with allow rule for SSH connections
   - [`disable_pw_auth.yml`](./disable_pw_auth.yml): Disallows empty passwords and password authentication using sshd config.
-    > You will lose access to the server, if you have not yet set up a user with SSH keys (using [`create_users.yml`](./create_users.yml) or otherwise)!
+    > You will lose access to the server if you have not yet set up a user with SSH keys (using [`create_users.yml`](./create_users.yml) or otherwise)!
 - **Kubernetes**:
-  - [`k8s_setup.yml`](./k8s_setup.yml): Satisfying Kubernetes prerequisites by installing container runtime, open required ports, etc.
+  - [`k8s_setup.yml`](./k8s_setup.yml): Satisfies Kubernetes prerequisites by installing the container runtime, opening required ports, etc.
   - [`k8s_init_cluster.yml`](./k8s_init_cluster.yml): Initializing cluster using kubeadm and installing container network interface (CNI) 
   - [`k8s_join_cluster.yml`](./k8s_join_cluster.yml): Joining the cluster for additional control plane and worker nodes. If a control plane is also serving as a worker, by being defined in the controller and worker list of your inventory file, it will "untaint" the control plane so it may be targeted by the scheduler to schedule pods.
-    > Make sure you understand the security implications if you want to use you control plane as a worker! See: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#control-plane-node-isolation
+    > Make sure you understand the security implications if you want to use your control plane as a worker! See: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#control-plane-node-isolation
   - [`k8s_setup_metallb.yml`](./k8s_setup_metallb.yml): Enabling LoadBalancer type resources using [MetalLB](https://metallb.universe.tf/) implementation. This may be needed if you run a baremetal node or if your cluster is running on a cloud platform that is not supported by Kubernetes, expressed by resources of type LoadBalancer remaining in "pending" state indefinitely when created.
+  - [`k8s_setup_nginx.yml`](./k8s_setup_nginx.yml): Installing [Ingress NGINX Controller](https://kubernetes.github.io/ingress-nginx/) to manage [Kubernetes Ingress resources](https://kubernetes.io/docs/concepts/services-networking/ingress/) enabling external access to services in you cluster.
 
 ## Usage
 
 1. **Set Up Ansible Inventory**: Create an inventory file containing "controller" and "worker" host lists (see [`example_inventory.yml`](./example_inventory.yml)) with the details of the servers you wish to manage.
 1. **Define Host Variables**: Use the `host_vars` directory to define variables specific to each host (see [`example.com.yml`](./host_vars/example.com.yml)), such as user details and SSH keys.
 1. **Create Ansible Vault** (optional): Create an Ansible Vault file in the `vars` directory (see [`example_user_vault.yml`](./vars/example_user_vault.yml)), required if you want to use [`create_users.yml`](./create_users.yml) to set up users with passwords.
-1. **Run Playbooks**: Execute the Ansible playbooks to perform the desired administration tasks, replacing `example_inventory.yml` with the path to your Ansible inventory file. It is advisable to review the different playbooks files before executing them, as they may provide further hints and considerations, and ultimately for the security of your servers as they may change configuration, create files, install packages, etc.. Here is a short overview of the different playbooks and their use:
+1. **Run Playbooks**: Execute the Ansible playbooks to perform the desired administration tasks, replacing `example_inventory.yml` with the path to your Ansible inventory file. It is advisable to review the different playbook files before executing them, as they may provide further hints and considerations, and ultimately for the security of your servers as they change configuration, create files, install packages, etc.. Here is a short overview of the different playbooks and their use:
 
     - [`create_users.yml`](./create_users.yml): Make sure you have prepared an Ansible Vault file (see [`example_user_vault.yml`](./vars/example_user_vault.yml) for instructions) storing the password for your users, afterwards you may execute the script like this:
         - When executing as root:
@@ -45,7 +46,7 @@ You need to install Ansible on your control node (the one you intend to execute 
         ```
 
     - [`disable_pw_auth.yml`](./disable_pw_auth.yml):
-        > :warning: Only execute this after you have set up a user with SSH keys, otherwise you will lose access to your server!
+        > :warning: Execute this only after having set up a user with SSH keys. You will lose access to your server otherwise!
         ```
         ansible-playbook -i example_inventory.yml --user admin --ask-become-pass disable_pw_auth.yml
         ```
@@ -74,7 +75,7 @@ You need to install Ansible on your control node (the one you intend to execute 
         ```
 
     - [`k8s_setup_nginx.yml`](./k8s_setup_nginx.yml):
-        > This playbook requires resources of type LoadBalancer to be supported in order for Ingress to route external traffic to your cluster's services. Ensure they are supported and, if necessary, enable them using `k8s_setup_metallb.yml`. You may also change the configuration in the playbook to support [NodePort services](https://kubernetes.github.io/ingress-nginx/deploy/baremetal/#over-a-nodeport-service), but this is not recommended except for testing or learning purposes.
+        > This playbook requires resources of type LoadBalancer to be supported to enable Ingress to route external traffic to your cluster's services. Ensure they are supported, and if necessary, enable them using `k8s_setup_metallb.yml`. You may also change the configuration in the playbook to support [NodePort services](https://kubernetes.github.io/ingress-nginx/deploy/baremetal/#over-a-nodeport-service), but this is not recommended except for testing or learning purposes.
         ```
         ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup_nginx.yml
         ```
