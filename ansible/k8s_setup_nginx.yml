@@ -16,6 +16,7 @@
       helm upgrade --install ingress-nginx ingress-nginx \
         --repo https://kubernetes.github.io/ingress-nginx \
         --namespace ingress-nginx \
+        --set controller.extraArgs.enable-ssl-passthrough=true \
         --create-namespace
 
   - name: Creating .kube folder
