@@ -21,6 +21,7 @@ You need to install Ansible on the machine you intend to run the playbook from t
     > Make sure you understand the security implications if you want to use your control plane as a worker! See: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#control-plane-node-isolation
   - [`k8s_setup_metallb.yml`](./k8s_setup_metallb.yml): Enabling LoadBalancer type resources using [MetalLB](https://metallb.universe.tf/) implementation. This may be needed if you run a baremetal node or if your cluster is running on a cloud platform that is not supported by Kubernetes, expressed by resources of type LoadBalancer remaining in "pending" state indefinitely when created.
   - [`k8s_setup_nginx.yml`](./k8s_setup_nginx.yml): Installing [Ingress NGINX Controller](https://kubernetes.github.io/ingress-nginx/) to manage [Kubernetes Ingress resources](https://kubernetes.io/docs/concepts/services-networking/ingress/) enabling external access to services in you cluster.
+  - [`k8s_deploy_cert_manager.yml`](./k8s_deploy_cert_manager.yml): Installing [cert-manager](https://cert-manager.io/docs/) to issue and renew TLS certificates using Let's Encrypt certificate authority. (Other certificate authorities are supported as well. See [cert-manager docs](https://cert-manager.io/docs/configuration/))
 
 ## Usage
 
@@ -78,4 +79,9 @@ You need to install Ansible on the machine you intend to run the playbook from t
         > This playbook requires resources of type LoadBalancer to be supported to enable Ingress to route external traffic to your cluster's services. Ensure they are supported, and if necessary, enable them using `k8s_setup_metallb.yml`. You may also change the configuration in the playbook to support [NodePort services](https://kubernetes.github.io/ingress-nginx/deploy/baremetal/#over-a-nodeport-service), but this is not recommended except for testing or learning purposes.
         ```
         ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_setup_nginx.yml
+        ```
+
+    - [`k8s_deploy_cert_manager.yml`](./k8s_deploy_cert_manager.yml):
+        ```
+        ansible-playbook -i example_inventory.yml --user admin --ask-become-pass k8s_deploy_cert_manager.yml
         ```
