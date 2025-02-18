@@ -17,6 +17,16 @@
       replace: 'PermitEmptyPasswords no'
     become: true
 
+  # **NOTE:** Some cloud providers come with subconfig files in sshd_config.d that may override your main configuration, update the list with files you want to remove.
+  - name: Removing ssh config files
+    ansible.builtin.file:
+      path: "{{ item }}"
+      state: absent
+    with_items:
+      - /etc/ssh/sshd_config.d/50-cloud-init.conf
+      - /etc/ssh/sshd_config.d/60-cloudimg-settings.conf
+    become: true
+
   - name: Restarting ssh service
     ansible.builtin.systemd_service:
       state: restarted
