@@ -51,8 +51,6 @@
 
 - name: Adding default containerd configuration
   ansible.builtin.shell: /usr/bin/containerd config default > /etc/containerd/config.toml
-  args:
-    creates: /etc/containerd/config.toml
   become: true
 
 - name: Setting SystemdCgroup to true
