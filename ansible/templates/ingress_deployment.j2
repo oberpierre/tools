@@ -36,10 +36,13 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  {% if tls_hosts is defined %}
   annotations:
+    {% if tls_hosts is defined %}
     cert-manager.io/cluster-issuer: {{ cluster_issuer_name }}
-  {% endif %}
+    {% else %}
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    {% endif %}
   name: {{ app_name }}-ingress
 spec:
   ingressClassName: nginx
@@ -52,7 +55,7 @@ spec:
       secretName: {{ app_name }}-cert
   {% endif %}
   rules:
-  {% for item in tls_hosts | default(hosts) %}
+  {% for item in tls_hosts | default(web_hosts) %}
   - host: {{ item }}
     http:
       paths:

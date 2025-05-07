@@ -33,7 +33,7 @@
       dest: "{{ ansible_env.HOME }}/.kube/{{test_app_name}}.yml"
     vars:
       app_name: "{{ test_app_name }}"
-      hosts: "{{ test_domains }}"
+      web_hosts: "{{ test_domains }}"
     when: test_domains
     register: web_deployment
 
