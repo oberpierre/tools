@@ -20,7 +20,10 @@
         --repo https://charts.jetstack.io \
         --namespace cert-manager \
         --create-namespace \
-        --set installCRDs=true
+        --set crds.enabled=true \
+        --set ingressShim.defaultIssuerName={{ cluster_issuer_name }} \
+        --set ingressShim.defaultIssuerKind=ClusterIssuer \
+        --set ingressShim.defaultIssuerGroup=cert-manager.io
 
   - name: Creating cluster-issuer config using letsencrypt ACME challenge
     ansible.builtin.copy:
