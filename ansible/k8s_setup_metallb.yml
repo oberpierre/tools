@@ -27,7 +27,7 @@
       state: directory
       mode: "0755"
 
-  - name: Configuring MetalLB address pool and advertisment
+  - name: Configuring MetalLB address pool and advertisement
     ansible.builtin.copy:
       dest: "{{ ansible_env.HOME }}/.kube/metallb.yml"
       content: |
@@ -42,8 +42,8 @@
         apiVersion: metallb.io/v1beta1
         kind: L2Advertisement
         metadata:
-          name: public-advertisment
+          name: public-advertisement
           namespace: {{ metallb_namespace }}
 
-  - name: Apllying MetalLB configuration
+  - name: Applying MetalLB configuration
     ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/metallb.yml
