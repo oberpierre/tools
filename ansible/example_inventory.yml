@@ -8,18 +8,20 @@
 # There is some additional host_var variables to be specified for the used init_controller, which are used to apply configurations. See the example.com.yml in the host_vars directory.
 # These may be specified for all controllers if you want the flexibility of changing the init_controller, which is helpful if your initial init_controller becomes unavailable due to maintenance or an issue.
 init_controller:
-  hosts: example.com
+  hosts:
+    example.com:
 
 controller:
-  hosts: example.com
-    controller0.example.com
-    controller1.example.com
+  hosts:
+    example.com:
+    controller0.example.com:
+    controller1.example.com:
 
 worker:
   hosts:
     # This will lead to your control plane, since it is defined in the controller list as well, to be "untainted" and a target for the load balancer.
     # This may be a security concern, see also: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/#control-plane-node-isolation
-    example.com
-    node0.example.com
-    node1.example.com
-    node2.example.com
+    example.com:
+    node0.example.com:
+    node1.example.com:
+    node2.example.com:
