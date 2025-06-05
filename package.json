@@ -1,0 +1,13 @@
+{
+  "name": "ansible-playbooks",
+  "private": true,
+  "devDependencies": {
+    "prettier": "^3.5.3"
+  },
+  "scripts": {
+    "format": "prettier --write \"**/*.{yml,yaml}\""
+  },
+  "engines": {
+    "node": ">20.0.0"
+  }
+}

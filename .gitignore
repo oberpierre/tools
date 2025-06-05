@@ -1,6 +1,9 @@
 # Python virtual env for python ansible installation
 .venv
 
+# Node.js dependencies (used for formatting)
+node_modules/
+
 # Prevent inclusion of ansible inventory and variable files, except for examples
 ansible/*inventory*
 !ansible/example*
