@@ -5,48 +5,48 @@
     metallb_namespace: metallb-system
 
   roles:
-  - helm
+    - helm
 
   tasks:
-  - name: Setting strictARP to true
-    ansible.builtin.shell: |
-      kubectl get configmap kube-proxy -n kube-system -o yaml | \
-      sed -e "s/strictARP: false/strictARP: true/" | \
-      kubectl apply -f - -n kube-system
+    - name: Setting strictARP to true
+      ansible.builtin.shell: |
+        kubectl get configmap kube-proxy -n kube-system -o yaml | \
+        sed -e "s/strictARP: false/strictARP: true/" | \
+        kubectl apply -f - -n kube-system
 
-  - name: Installing/Upgrading MetalLB
-    ansible.builtin.shell: |
-      helm upgrade --install metallb metallb \
-        --repo https://metallb.github.io/metallb \
-        --namespace {{ metallb_namespace }} \
-        --create-namespace
+    - name: Installing/Upgrading MetalLB
+      ansible.builtin.shell: |
+        helm upgrade --install metallb metallb \
+          --repo https://metallb.github.io/metallb \
+          --namespace {{ metallb_namespace }} \
+          --create-namespace
 
-  - name: Creating .kube folder
-    ansible.builtin.file:
-      path: "{{ ansible_env.HOME }}/.kube"
-      state: directory
-      mode: "0755"
+    - name: Creating .kube folder
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: "0755"
 
-  - name: Configuring MetalLB address pool and advertisement
-    ansible.builtin.copy:
-      dest: "{{ ansible_env.HOME }}/.kube/metallb.yml"
-      content: |
-        apiVersion: metallb.io/v1beta1
-        kind: IPAddressPool
-        metadata:
-          name: public-pool
-          namespace: {{ metallb_namespace }}
-        spec:
-          addresses: {{ metallb_addresses }}
-        ---
-        apiVersion: metallb.io/v1beta1
-        kind: L2Advertisement
-        metadata:
-          name: public-advertisement
-          namespace: {{ metallb_namespace }}
-        spec:
-          ipAddressPools:
-          - public-pool
+    - name: Configuring MetalLB address pool and advertisement
+      ansible.builtin.copy:
+        dest: "{{ ansible_env.HOME }}/.kube/metallb.yml"
+        content: |
+          apiVersion: metallb.io/v1beta1
+          kind: IPAddressPool
+          metadata:
+            name: public-pool
+            namespace: {{ metallb_namespace }}
+          spec:
+            addresses: {{ metallb_addresses }}
+          ---
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: public-advertisement
+            namespace: {{ metallb_namespace }}
+          spec:
+            ipAddressPools:
+            - public-pool
 
-  - name: Applying MetalLB configuration
-    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/metallb.yml
+    - name: Applying MetalLB configuration
+      ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/metallb.yml

@@ -11,75 +11,75 @@
     cluster_issuer_server: https://acme-v02.api.letsencrypt.org/directory
 
   roles:
-  - helm
+    - helm
 
   tasks:
-  - name: Installing/Upgrading cert-manager
-    ansible.builtin.shell: |
-      helm upgrade --install cert-manager cert-manager \
-        --repo https://charts.jetstack.io \
-        --namespace cert-manager \
-        --create-namespace \
-        --set crds.enabled=true \
-        --set ingressShim.defaultIssuerName={{ cluster_issuer_name }} \
-        --set ingressShim.defaultIssuerKind=ClusterIssuer \
-        --set ingressShim.defaultIssuerGroup=cert-manager.io
+    - name: Installing/Upgrading cert-manager
+      ansible.builtin.shell: |
+        helm upgrade --install cert-manager cert-manager \
+          --repo https://charts.jetstack.io \
+          --namespace cert-manager \
+          --create-namespace \
+          --set crds.enabled=true \
+          --set ingressShim.defaultIssuerName={{ cluster_issuer_name }} \
+          --set ingressShim.defaultIssuerKind=ClusterIssuer \
+          --set ingressShim.defaultIssuerGroup=cert-manager.io
 
-  - name: Creating cluster-issuer config using letsencrypt ACME challenge
-    ansible.builtin.copy:
-      dest: "{{ ansible_env.HOME }}/.kube/cluster-issuer.yml"
-      content: |
-        apiVersion: cert-manager.io/v1
-        kind: ClusterIssuer
-        metadata: 
-          name: {{ cluster_issuer_name }}
-        spec: 
-          acme: 
-            email: {{ cluster_issuer_email }}
-            privateKeySecretRef: 
-              name: {{ cluster_issuer_name }}
-            server: {{ cluster_issuer_server }}
-            solvers:
-            - http01:
-                ingress:
-                  ingressClassName: nginx
+    - name: Creating cluster-issuer config using letsencrypt ACME challenge
+      ansible.builtin.copy:
+        dest: "{{ ansible_env.HOME }}/.kube/cluster-issuer.yml"
+        content: |
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata: 
+            name: {{ cluster_issuer_name }}
+          spec: 
+            acme: 
+              email: {{ cluster_issuer_email }}
+              privateKeySecretRef: 
+                name: {{ cluster_issuer_name }}
+              server: {{ cluster_issuer_server }}
+              solvers:
+              - http01:
+                  ingress:
+                    ingressClassName: nginx
 
-  - name: Applying cluster-issuer config
-    ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
+    - name: Applying cluster-issuer config
+      ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
 
-  - name: Creating .kube folder
-    ansible.builtin.file:
-      path: "{{ ansible_env.HOME }}/.kube"
-      state: directory
-      mode: "0755"
-    when: test_domains  
+    - name: Creating .kube folder
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: "0755"
+      when: test_domains
 
-  - name: Creating tls test container deployment
-    ansible.builtin.template:
-      lstrip_blocks: true
-      src: templates/ingress_deployment.j2
-      dest: "{{ ansible_env.HOME }}/.kube/{{test_app_name}}.yml"
-    vars:
-      app_name: "{{ test_app_name }}"
-      tls_hosts: "{{ test_domains }}"
-    when: test_domains
-    register: tls_deployment
+    - name: Creating tls test container deployment
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/ingress_deployment.j2
+        dest: "{{ ansible_env.HOME }}/.kube/{{test_app_name}}.yml"
+      vars:
+        app_name: "{{ test_app_name }}"
+        tls_hosts: "{{ test_domains }}"
+      when: test_domains
+      register: tls_deployment
 
-  - name: Deploying tls test container for testing
-    ansible.builtin.shell: kubectl apply -f {{ tls_deployment.dest }}
-    when: tls_deployment.changed
+    - name: Deploying tls test container for testing
+      ansible.builtin.shell: kubectl apply -f {{ tls_deployment.dest }}
+      when: tls_deployment.changed
 
-  - name: Pausing for verification
-    ansible.builtin.pause:
-      prompt: Verify if you can publicly reach {{ test_domains }} using https. Press [Enter] to continue
-    when: tls_deployment.changed
+    - name: Pausing for verification
+      ansible.builtin.pause:
+        prompt: Verify if you can publicly reach {{ test_domains }} using https. Press [Enter] to continue
+      when: tls_deployment.changed
 
-  - name: Removing tls test container
-    ansible.builtin.shell: kubectl delete -f {{ tls_deployment.dest }}
-    when: tls_deployment.changed
+    - name: Removing tls test container
+      ansible.builtin.shell: kubectl delete -f {{ tls_deployment.dest }}
+      when: tls_deployment.changed
 
-  - name: Removing tls test container configuration
-    ansible.builtin.file:
-      path: "{{ tls_deployment.dest }}"
-      state: absent
-    when: tls_deployment.changed
+    - name: Removing tls test container configuration
+      ansible.builtin.file:
+        path: "{{ tls_deployment.dest }}"
+        state: absent
+      when: tls_deployment.changed

@@ -3,47 +3,47 @@
   hosts: init_controller
 
   tasks:
-  - name: Creating .kube folder
-    ansible.builtin.file:
-      path: "{{ ansible_env.HOME }}/.kube"
-      state: directory
-      mode: "0755"
+    - name: Creating .kube folder
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: "0755"
 
-  # Creating a kubeadm init config file (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-init/#config-file)
-  # Adapt the configuration below as needed
-  - name: Creating kubeadm config file
-    ansible.builtin.copy:
-      dest: "{{ ansible_env.HOME }}/.kube/kubeadm-config.yml"
-      content: |
-        apiVersion: kubeadm.k8s.io/v1beta4
-        kind: InitConfiguration
-        nodeRegistration:
-          criSocket: "unix:///var/run/containerd/containerd.sock"
-        ---
-        apiVersion: kubeadm.k8s.io/v1beta4
-        kind: ClusterConfiguration
-        networking:
-          podSubnet: "10.244.0.0/16"
-        ---
-        apiVersion: kubelet.config.k8s.io/v1beta1
-        kind: KubeletConfiguration
-        cgroupDriver: systemd
+    # Creating a kubeadm init config file (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-init/#config-file)
+    # Adapt the configuration below as needed
+    - name: Creating kubeadm config file
+      ansible.builtin.copy:
+        dest: "{{ ansible_env.HOME }}/.kube/kubeadm-config.yml"
+        content: |
+          apiVersion: kubeadm.k8s.io/v1beta4
+          kind: InitConfiguration
+          nodeRegistration:
+            criSocket: "unix:///var/run/containerd/containerd.sock"
+          ---
+          apiVersion: kubeadm.k8s.io/v1beta4
+          kind: ClusterConfiguration
+          networking:
+            podSubnet: "10.244.0.0/16"
+          ---
+          apiVersion: kubelet.config.k8s.io/v1beta1
+          kind: KubeletConfiguration
+          cgroupDriver: systemd
 
-  - name: Initializing cluster
-    ansible.builtin.shell: kubeadm init --node-name {{ node_name | default(inventory_hostname) }} --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
-    args:
-      creates: /etc/kubernetes/admin.conf
-    become: true
+    - name: Initializing cluster
+      ansible.builtin.shell: kubeadm init --node-name {{ node_name | default(inventory_hostname) }} --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
+      args:
+        creates: /etc/kubernetes/admin.conf
+      become: true
 
-  - name: Copying admin.conf to .kube
-    ansible.builtin.copy:
-      remote_src: true
-      src: /etc/kubernetes/admin.conf
-      dest: "{{ ansible_env.HOME }}/.kube/config"
-      owner: "{{ ansible_env.USER }}"
-      group: "{{ ansible_env.USER }}"
-      mode: "0600"
-    become: true
+    - name: Copying admin.conf to .kube
+      ansible.builtin.copy:
+        remote_src: true
+        src: /etc/kubernetes/admin.conf
+        dest: "{{ ansible_env.HOME }}/.kube/config"
+        owner: "{{ ansible_env.USER }}"
+        group: "{{ ansible_env.USER }}"
+        mode: "0600"
+      become: true
 
-  - name: Installing pod network add-on
-    ansible.builtin.shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml >> {{ ansible_env.HOME }}/.kube/network_setup.log
+    - name: Installing pod network add-on
+      ansible.builtin.shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml >> {{ ansible_env.HOME }}/.kube/network_setup.log

@@ -16,6 +16,6 @@ ssh_pub_files:
 # Kubernetes variables
 node_name: controller0 # Make sure these are unique for easy identification of the node, if not specified inventory_hostname will be used as default
 metallb_addresses:
-- 192.168.10.0/24
-- 192.168.9.1-192.168.9.5
-- fc00:f853:0ccd:e799::/124
+  - 192.168.10.0/24
+  - 192.168.9.1-192.168.9.5
+  - fc00:f853:0ccd:e799::/124
