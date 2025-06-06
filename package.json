@@ -2,10 +2,12 @@
   "name": "ansible-playbooks",
   "private": true,
   "devDependencies": {
+    "husky": "^9.1.7",
     "prettier": "^3.5.3"
   },
   "scripts": {
-    "format": "prettier --write \"**/*.{yml,yaml}\""
+    "format": "prettier --write \"**/*.{yml,yaml}\"",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">20.0.0"
