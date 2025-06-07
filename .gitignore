@@ -4,6 +4,10 @@
 # Node.js dependencies (used for formatting)
 node_modules/
 
+# Ansible (https://github.com/github/gitignore/blob/main/Global/Ansible.gitignore)
+*.retry
+.ansible/
+
 # Prevent inclusion of ansible inventory and variable files, except for examples
 ansible/*inventory*
 !ansible/example*
