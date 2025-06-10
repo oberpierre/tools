@@ -12,7 +12,6 @@ The project is organized into subdirectories, each dedicated to a specific type 
 
 To use the tools in this repository, clone it to your machine and refer to the getting started sections in the subdirectories README.
 
-
 ## Formatting
 
 We’re using Prettier to enforce consistent YAML styling:

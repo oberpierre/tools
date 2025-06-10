@@ -7,7 +7,7 @@
     "prettier": "^3.5.3"
   },
   "scripts": {
-    "format": "prettier --write \"**/*.{yml,yaml}\"",
+    "format": "prettier --ignore-unknown --write .",
     "prepare": "husky"
   },
   "engines": {
