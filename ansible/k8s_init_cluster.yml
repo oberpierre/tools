@@ -9,7 +9,8 @@
         state: directory
         mode: "0755"
 
-    # Creating a kubeadm init config file (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-init/#config-file)
+    # Creating a kubeadm init config file
+    # (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-init/#config-file)
     # Adapt the configuration below as needed
     - name: Creating kubeadm config file
       ansible.builtin.copy:

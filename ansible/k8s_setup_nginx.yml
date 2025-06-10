@@ -2,7 +2,8 @@
 - name: Deploying Ingress NGINX Controller
   hosts: init_controller
   vars:
-    # Set test_domains to your domain names (e.g. test.example.com as array) to deploy a hello world container (nginxdemos/nginx-hello) for verification
+    # Set test_domains to your domain names (e.g. test.example.com as array) to deploy a hello world container
+    # (nginxdemos/nginx-hello) for verification
     test_domains: false
     # - test.example.com
     test_app_name: web-test
@@ -30,7 +31,7 @@
       ansible.builtin.template:
         lstrip_blocks: true
         src: templates/ingress_deployment.j2
-        dest: "{{ ansible_env.HOME }}/.kube/{{test_app_name}}.yml"
+        dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
       vars:
         app_name: "{{ test_app_name }}"
         web_hosts: "{{ test_domains }}"

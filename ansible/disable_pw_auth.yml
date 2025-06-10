@@ -17,7 +17,8 @@
         replace: "PermitEmptyPasswords no"
       become: true
 
-    # **NOTE:** Some cloud providers come with subconfig files in sshd_config.d that may override your main configuration, update the list with files you want to remove.
+    # **NOTE:** Some cloud providers come with subconfig files in sshd_config.d that may override your main
+    # configuration, update the list with files you want to remove.
     - name: Removing ssh config files
       ansible.builtin.file:
         path: "{{ item }}"
