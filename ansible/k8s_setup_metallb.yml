@@ -46,7 +46,7 @@
             namespace: {{ metallb_namespace }}
           spec:
             ipAddressPools:
-            - public-pool
+              - public-pool
 
     - name: Applying MetalLB configuration
       ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/metallb.yml

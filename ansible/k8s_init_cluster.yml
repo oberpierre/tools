@@ -31,7 +31,9 @@
           cgroupDriver: systemd
 
     - name: Initializing cluster
-      ansible.builtin.shell: kubeadm init --node-name {{ node_name | default(inventory_hostname) }} --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
+      ansible.builtin.shell: |
+        kubeadm init --node-name {{ node_name | default(inventory_hostname) }} \
+          --config {{ ansible_env.HOME }}/.kube/kubeadm-config.yml >> {{ ansible_env.HOME }}/.kube/kubeadm.log
       args:
         creates: /etc/kubernetes/admin.conf
       become: true
@@ -47,4 +49,6 @@
       become: true
 
     - name: Installing pod network add-on
-      ansible.builtin.shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml >> {{ ansible_env.HOME }}/.kube/network_setup.log
+      ansible.builtin.shell: |
+        kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml \
+          >> {{ ansible_env.HOME }}/.kube/network_setup.log

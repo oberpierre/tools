@@ -41,9 +41,9 @@
                 name: {{ cluster_issuer_name }}
               server: {{ cluster_issuer_server }}
               solvers:
-              - http01:
-                  ingress:
-                    ingressClassName: nginx
+                - http01:
+                    ingress:
+                      ingressClassName: nginx
 
     - name: Applying cluster-issuer config
       ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
