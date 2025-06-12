@@ -13,12 +13,17 @@
 
   tasks:
     - name: Deploying ingress-nginx
-      ansible.builtin.shell: |
-        helm upgrade --install ingress-nginx ingress-nginx \
-          --repo https://kubernetes.github.io/ingress-nginx \
-          --namespace ingress-nginx \
-          --set controller.extraArgs.enable-ssl-passthrough=true \
-          --create-namespace
+      kubernetes.core.helm:
+        name: ingress-nginx
+        chart_repo_url: https://kubernetes.github.io/ingress-nginx
+        chart_ref: ingress-nginx
+        release_namespace: ingress-nginx
+        create_namespace: true
+        state: present
+        values:
+          controller:
+            extraArgs:
+              enable-ssl-passthrough: "true"
 
     - name: Creating .kube folder
       ansible.builtin.file:

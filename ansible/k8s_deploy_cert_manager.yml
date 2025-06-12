@@ -16,15 +16,19 @@
 
   tasks:
     - name: Installing/Upgrading cert-manager
-      ansible.builtin.shell: |
-        helm upgrade --install cert-manager cert-manager \
-          --repo https://charts.jetstack.io \
-          --namespace cert-manager \
-          --create-namespace \
-          --set crds.enabled=true \
-          --set ingressShim.defaultIssuerName={{ cluster_issuer_name }} \
-          --set ingressShim.defaultIssuerKind=ClusterIssuer \
-          --set ingressShim.defaultIssuerGroup=cert-manager.io
+      kubernetes.core.helm:
+        name: cert-manager
+        chart_repo_url: https://charts.jetstack.io
+        chart_ref: cert-manager
+        release_namespace: cert-manager
+        create_namespace: true
+        state: present
+        values:
+          crds.enabled: true
+          ingressShim:
+            defaultIssuerName: "{{ cluster_issuer_name }}"
+            defaultIssuerKind: ClusterIssuer
+            defaultIssuerGroup: cert-manager.io
 
     - name: Creating cluster-issuer config using letsencrypt ACME challenge
       ansible.builtin.copy:
