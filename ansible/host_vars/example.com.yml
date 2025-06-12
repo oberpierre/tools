@@ -4,7 +4,8 @@ ansible_python_interpreter: /usr/bin/python3
 # Initial server setup
 create_users:
   - name: admin
-    # **NOTE**: Do not specify passwords directly in host_vars, use Ansible Vault (https://docs.ansible.com/ansible/latest/vault_guide/vault.html) to store your secrets!
+    # **NOTE**: Do not specify passwords directly in host_vars, use Ansible Vault
+    # (https://docs.ansible.com/ansible/latest/vault_guide/vault.html) to store your secrets!
     password: "{{ admin_password }}"
     groups: sudo
   - name: serviceaccount
@@ -14,8 +15,9 @@ ssh_pub_files:
     file: ~/.ssh/admin_id_rsa.pub
 
 # Kubernetes variables
-node_name: controller0 # Make sure these are unique for easy identification of the node, if not specified inventory_hostname will be used as default
+# Make sure node names are unique for easy identification of the node, if not specified inventory_hostname will be used as default
+node_name: controller0
 metallb_addresses:
-- 192.168.10.0/24
-- 192.168.9.1-192.168.9.5
-- fc00:f853:0ccd:e799::/124
+  - 192.168.10.0/24
+  - 192.168.9.1-192.168.9.5
+  - fc00:f853:0ccd:e799::/124
