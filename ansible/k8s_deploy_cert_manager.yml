@@ -15,6 +15,12 @@
     - helm
 
   tasks:
+    - name: Creating .kube folder
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: "0755"
+
     - name: Installing/Upgrading cert-manager
       kubernetes.core.helm:
         name: cert-manager
@@ -51,13 +57,6 @@
 
     - name: Applying cluster-issuer config
       ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
-
-    - name: Creating .kube folder
-      ansible.builtin.file:
-        path: "{{ ansible_env.HOME }}/.kube"
-        state: directory
-        mode: "0755"
-      when: test_domains
 
     - name: Creating tls test container deployment
       ansible.builtin.template:
