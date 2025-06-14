@@ -8,6 +8,7 @@
   },
   "scripts": {
     "format": "prettier --ignore-unknown --write .",
+    "format:check": "prettier --ignore-unknown --check .",
     "prepare": "husky"
   },
   "engines": {
