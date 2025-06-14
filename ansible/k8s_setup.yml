@@ -7,66 +7,66 @@
     - k8s
 
   tasks:
-  - name: Installing jq
-    ansible.builtin.import_role:
-      name: install
-    vars:
-      packages:
-        - jq
-    become: true
+    - name: Installing jq
+      ansible.builtin.import_role:
+        name: install
+      vars:
+        packages:
+          - jq
+      become: true
 
 - name: Enabling worker ports
   hosts: worker
   become: true
 
   tasks:
-  # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ worker nodes
-  - name: Allowing K8s worker ports
-    community.general.ufw:
-      rule: allow
-      port: "{{ item.port }}"
-      comment: "{{ item.comment }}"
-      proto: tcp
-    with_items:
-      - port: "30000:32767"
-        comment: "NodePort Services"
-    become: true
+    # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ worker nodes
+    - name: Allowing K8s worker ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        comment: "{{ item.comment }}"
+        proto: tcp
+      with_items:
+        - port: "30000:32767"
+          comment: "NodePort Services"
+      become: true
 
-  - name: Reloading ufw rules
-    community.general.ufw:
-      state: reloaded
-    become: true
+    - name: Reloading ufw rules
+      community.general.ufw:
+        state: reloaded
+      become: true
 
 - name: Installing kubectl
   hosts: controller
 
   tasks:
-  - name: Installing kubectl
-    ansible.builtin.import_role:
-      name: install
-    vars:
-      packages:
-        - kubectl
+    - name: Installing kubectl
+      ansible.builtin.import_role:
+        name: install
+      vars:
+        packages:
+          - kubectl
 
-  # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
-  - name: Allowing K8s control ports
-    community.general.ufw:
-      rule: allow
-      port: "{{ item.port }}"
-      comment: "{{ item.comment }}"
-      proto: tcp
-    with_items:
-      - port: "6443"
-        comment: "Kubernetes API server"
-      - port: "2379:2380"
-        comment: "etcd server client API"
-      - port: "10257"
-        comment: "kube-controller-manager"
-      - port: "10259"
-        comment: "kube-scheduler"
-    become: true
+    # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
+    - name: Allowing K8s control ports
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        comment: "{{ item.comment }}"
+        proto: tcp
+      with_items:
+        - port: "6443"
+          comment: "Kubernetes API server"
+        - port: "2379:2380"
+          comment: "etcd server client API"
+        - port: "10257"
+          comment: "kube-controller-manager"
+        - port: "10259"
+          comment: "kube-scheduler"
+      become: true
 
-  - name: Reloading ufw rules
-    community.general.ufw:
-      state: reloaded
-    become: true
+    - name: Reloading ufw rules
+      community.general.ufw:
+        state: reloaded
+      become: true

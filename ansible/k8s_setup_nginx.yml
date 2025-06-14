@@ -1,0 +1,63 @@
+# See https://kubernetes.github.io/ingress-nginx/deploy/
+- name: Deploying Ingress NGINX Controller
+  hosts: init_controller
+  vars:
+    # Set test_domains to your domain names (e.g. test.example.com as array) to deploy a hello world container
+    # (nginxdemos/nginx-hello) for verification
+    test_domains: false
+    # - test.example.com
+    test_app_name: web-test
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Deploying ingress-nginx
+      kubernetes.core.helm:
+        name: ingress-nginx
+        chart_repo_url: https://kubernetes.github.io/ingress-nginx
+        chart_ref: ingress-nginx
+        release_namespace: ingress-nginx
+        create_namespace: true
+        state: present
+        values:
+          controller:
+            extraArgs:
+              enable-ssl-passthrough: "true"
+
+    - name: Creating .kube folder
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: "0755"
+      when: test_domains
+
+    - name: Creating web test container deployment
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/ingress_deployment.j2
+        dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
+      vars:
+        app_name: "{{ test_app_name }}"
+        web_hosts: "{{ test_domains }}"
+      when: test_domains
+      register: web_deployment
+
+    - name: Deploying web test container for testing
+      ansible.builtin.shell: kubectl apply -f {{ web_deployment.dest }}
+      when: web_deployment.changed
+
+    - name: Pausing for verification
+      ansible.builtin.pause:
+        prompt: Verify if you can publicly reach your domains {{ test_domains }}. Press [Enter] to continue
+      when: web_deployment.changed
+
+    - name: Removing web test container
+      ansible.builtin.shell: kubectl delete -f {{ web_deployment.dest }}
+      when: web_deployment.changed
+
+    - name: Removing web test container configuration
+      ansible.builtin.file:
+        path: "{{ web_deployment.dest }}"
+        state: absent
+      when: web_deployment.changed
