@@ -1,4 +1,4 @@
-# Tools Collection
+# Tools &middot; [![CI](https://github.com/oberpierre/tools/actions/workflows/code-quality.yml/badge.svg)](https://github.com/oberpierre/tools/actions/workflows/code-quality.yml)
 
 This repository is a collection of tools and scripts designed to simplify and automate various tasks. Currently, it focuses on system administration automation using Ansible.
 
