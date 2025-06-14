@@ -31,7 +31,7 @@
     - name: Disabling PermitRootLogin
       ansible.builtin.replace:
         path: /etc/ssh/sshd_config
-        regexp: "^#?PermitRootLogin (no|yes)$"
+        regexp: "^#?PermitRootLogin (no|yes|prohibit-password|without-password|forced-commands-only)$"
         replace: "PermitRootLogin no"
       become: true
       when: not permit_root_login
