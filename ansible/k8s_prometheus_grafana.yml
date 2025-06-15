@@ -1,0 +1,61 @@
+- name: Deploy kube-prometheus-stack with preconfigured dashboards
+  hosts: init_controller
+  vars:
+    prometheus_namespace: monitoring
+  vars_files:
+    - vars/example_user_vault.yml
+
+  tasks:
+    - name: Creating .kube folder
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/monitoring"
+        state: directory
+        mode: "0755"
+      register: dest_folder
+
+    - name: Creating kube-prometheus-stack values file
+      ansible.builtin.copy:
+        dest: "{{ dest_folder.path }}/prometheus-values.yml"
+        content: |
+          grafana:
+            adminUser: "{{ vault_grafana_user }}"
+            adminPassword: "{{ vault_grafana_password }}"
+            grafana.ini:
+              auth.anonymous:
+                enabled: false
+            ingress:
+              enabled: false
+            dashboards:
+              default:
+                node-exporter-full:
+                  gnetId: 1860
+                  revision: 27
+                  datasource: Prometheus
+                k8s-cluster-overview:
+                  gnetId: 6417
+                  revision: 1
+                  datasource: Prometheus
+          prometheus:
+            prometheusSpec:
+              serviceMonitorSelectorNilUsesHelmValues: false
+      register: prometheus_values
+      no_log: true
+
+    - name: Deploying kube-prometheus-stack
+      kubernetes.core.helm:
+        name: kube-prometheus-stack
+        chart_repo_url: https://prometheus-community.github.io/helm-charts
+        chart_ref: kube-prometheus-stack
+        release_namespace: "{{ prometheus_namespace }}"
+        create_namespace: true
+        state: present
+        values_files:
+          - "{{ prometheus_values.dest }}"
+      no_log: true # Values file contains secrets
+
+    - name: Waiting for Grafana service to be available
+      ansible.builtin.command: kubectl get svc -n {{ prometheus_namespace }}
+      register: svc_output
+      until: '"grafana" in svc_output.stdout'
+      retries: 10
+      delay: 15
