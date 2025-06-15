@@ -2,6 +2,5 @@
 admin_password: sha512_encrypted_string
 vault_grafana_user: admin
 vault_grafana_password: password
-
 # You may use for example mkpasswd to create a SHA-512 hashed password for your users and encrypt as follows:
 # > ansible-vault encrypt example_user_vault.yml
