@@ -14,6 +14,8 @@ ssh_pub_files:
   - name: admin
     file: ~/.ssh/admin_id_rsa.pub
 
+permit_root_login: false
+
 # Kubernetes variables
 # Make sure node names are unique for easy identification of the node, if not specified inventory_hostname will be used as default
 node_name: controller0
