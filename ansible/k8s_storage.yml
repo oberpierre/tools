@@ -3,28 +3,28 @@
   hosts: init_controller
 
   roles:
-  - helm
+    - helm
 
   tasks:
-  - name: Installing Longhorn prerequisites
-    ansible.builtin.import_role:
-      name: install
-    vars:
-      packages:
-        - open-iscsi
-        - nfs-common
-    become: true
+    - name: Installing Longhorn prerequisites
+      ansible.builtin.import_role:
+        name: install
+      vars:
+        packages:
+          - open-iscsi
+          - nfs-common
+      become: true
 
-  - name: Starting and enabling iscsi deamon
-    ansible.builtin.systemd_service:
-      name: iscsid
-      state: started
-      enabled: true
-    become: true
+    - name: Starting and enabling iscsi deamon
+      ansible.builtin.systemd_service:
+        name: iscsid
+        state: started
+        enabled: true
+      become: true
 
-  - name: Installing Longhorn
-    ansible.builtin.shell: |
-      helm upgrade --install longhorn longhorn \
-        --repo https://charts.longhorn.io \
-        --namespace longhorn-system \
-        --create-namespace
+    - name: Installing Longhorn
+      ansible.builtin.shell: |
+        helm upgrade --install longhorn longhorn \
+          --repo https://charts.longhorn.io \
+          --namespace longhorn-system \
+          --create-namespace
