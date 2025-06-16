@@ -29,11 +29,11 @@
               default:
                 node-exporter-full:
                   gnetId: 1860
-                  revision: 27
+                  revision: 41
                   datasource: Prometheus
-                k8s-cluster-overview:
-                  gnetId: 6417
-                  revision: 1
+                k8s-dashboard:
+                  gnetId: 15661
+                  revision: 2
                   datasource: Prometheus
           prometheus:
             prometheusSpec:
