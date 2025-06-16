@@ -5,6 +5,9 @@
   vars_files:
     - vars/example_user_vault.yml
 
+  roles:
+    - helm
+
   tasks:
     - name: Creating .kube folder
       ansible.builtin.file:
