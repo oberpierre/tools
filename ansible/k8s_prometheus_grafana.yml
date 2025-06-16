@@ -64,7 +64,7 @@
     - name: Waiting for Grafana service to be available
       ansible.builtin.command: kubectl get svc -n {{ prometheus_namespace }}
       register: svc_output
-      until: '"grafana" in svc_output.stdout'
+      until: '"{{ grafana_service_name }}" in svc_output.stdout'
       retries: 10
       delay: 15
 
