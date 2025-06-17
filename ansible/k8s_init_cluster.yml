@@ -16,6 +16,7 @@
     - name: Creating kubeadm config file
       ansible.builtin.copy:
         dest: "{{ ansible_env.HOME }}/.kube/kubeadm-config.yml"
+        mode: "0600"
         content: |
           apiVersion: kubeadm.k8s.io/v1beta4
           kind: InitConfiguration

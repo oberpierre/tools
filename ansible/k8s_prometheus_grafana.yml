@@ -25,6 +25,7 @@
     - name: Creating kube-prometheus-stack values file
       ansible.builtin.copy:
         dest: "{{ dest_folder.path }}/prometheus-values.yml"
+        mode: "0600"
         content: |
           grafana:
             adminUser: "{{ vault_grafana_user }}"
@@ -74,6 +75,7 @@
         lstrip_blocks: true
         src: templates/ingress_deployment.j2
         dest: "{{ dest_folder.path }}/ingress.yml"
+        mode: "0600"
       vars:
         cluster_issuer_name: "{{ cluster_issuer }}"
         app_name: grafana

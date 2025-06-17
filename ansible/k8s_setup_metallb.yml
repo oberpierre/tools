@@ -33,6 +33,7 @@
     - name: Configuring MetalLB address pool and advertisement
       ansible.builtin.copy:
         dest: "{{ ansible_env.HOME }}/.kube/metallb.yml"
+        mode: "0600"
         content: |
           apiVersion: metallb.io/v1beta1
           kind: IPAddressPool

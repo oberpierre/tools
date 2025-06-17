@@ -17,6 +17,7 @@
 - name: Creating /etc/modules-load.d/k8s.conf
   ansible.builtin.copy:
     dest: /etc/modules-load.d/k8s.conf
+    mode: "0600"
     content: |
       overlay
       br_netfilter
