@@ -1,3 +1,4 @@
+---
 # Creating kubeadm cluster (see https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
 - name: Initializing K8s cluster on controller
   hosts: init_controller

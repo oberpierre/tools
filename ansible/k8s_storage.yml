@@ -1,3 +1,4 @@
+---
 # Deploying persistent block storage using Longhorn: https://longhorn.io/docs/1.8.1/deploy/install/install-with-helm/
 - name: Installing prerequisites for Longhorn
   hosts: init_controller

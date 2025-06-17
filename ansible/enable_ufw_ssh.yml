@@ -1,3 +1,4 @@
+---
 - name: Enabling firewall with configuration for OpenSSH
   hosts: all
 

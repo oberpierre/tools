@@ -1,3 +1,4 @@
+---
 - name: Adding K8s apt-key
   ansible.builtin.get_url:
     url: https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key
@@ -46,7 +47,7 @@
   become: true
 
 - name: Reloading sysctl params
-  ansible.builtin.shell: sysctl --system
+  ansible.builtin.command: sysctl --system
   become: true
 
 - name: Adding default containerd configuration
@@ -56,8 +57,8 @@
 - name: Setting SystemdCgroup to true
   ansible.builtin.replace:
     path: /etc/containerd/config.toml
-    regexp: '^(\s+)SystemdCgroup = false$'
-    replace: '\1SystemdCgroup = true'
+    regexp: "^(\\s+)SystemdCgroup = false$"
+    replace: "\\1SystemdCgroup = true"
   become: true
 
 - name: Restarting containerd service

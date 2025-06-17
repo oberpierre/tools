@@ -1,3 +1,4 @@
+---
 # Deploying cert manager: https://cert-manager.io/docs/installation/helm/#4-install-cert-manager
 - name: Deploying cert-manager
   hosts: init_controller
@@ -56,8 +57,7 @@
                       ingressClassName: nginx
 
     - name: Applying cluster-issuer config
-      ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
-
+      ansible.builtin.command: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
     - name: Creating tls test container deployment
       ansible.builtin.template:
         lstrip_blocks: true
@@ -70,7 +70,7 @@
       register: tls_deployment
 
     - name: Deploying tls test container for testing
-      ansible.builtin.shell: kubectl apply -f {{ tls_deployment.dest }}
+      ansible.builtin.command: kubectl apply -f {{ tls_deployment.dest }}
       when: tls_deployment.changed
 
     - name: Pausing for verification
@@ -79,7 +79,7 @@
       when: tls_deployment.changed
 
     - name: Removing tls test container
-      ansible.builtin.shell: kubectl delete -f {{ tls_deployment.dest }}
+      ansible.builtin.command: kubectl delete -f {{ tls_deployment.dest }}
       when: tls_deployment.changed
 
     - name: Removing tls test container configuration

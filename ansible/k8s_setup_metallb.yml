@@ -1,3 +1,4 @@
+---
 # See https://metallb.universe.tf/installation/
 - name: Installing MetalLB
   hosts: init_controller
@@ -51,4 +52,4 @@
               - public-pool
 
     - name: Applying MetalLB configuration
-      ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/metallb.yml
+      ansible.builtin.command: kubectl apply -f {{ ansible_env.HOME }}/.kube/metallb.yml

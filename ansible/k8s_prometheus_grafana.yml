@@ -1,3 +1,4 @@
+---
 - name: Deploy kube-prometheus-stack with preconfigured dashboards
   hosts: init_controller
   vars:

@@ -1,3 +1,4 @@
+---
 # See https://kubernetes.github.io/ingress-nginx/deploy/
 - name: Deploying Ingress NGINX Controller
   hosts: init_controller
@@ -44,7 +45,7 @@
       register: web_deployment
 
     - name: Deploying web test container for testing
-      ansible.builtin.shell: kubectl apply -f {{ web_deployment.dest }}
+      ansible.builtin.command: kubectl apply -f {{ web_deployment.dest }}
       when: web_deployment.changed
 
     - name: Pausing for verification
@@ -53,7 +54,7 @@
       when: web_deployment.changed
 
     - name: Removing web test container
-      ansible.builtin.shell: kubectl delete -f {{ web_deployment.dest }}
+      ansible.builtin.command: kubectl delete -f {{ web_deployment.dest }}
       when: web_deployment.changed
 
     - name: Removing web test container configuration

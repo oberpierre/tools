@@ -1,3 +1,4 @@
+---
 # **NOTE:** Make sure you have SSH keys set up, otherwise you will not be able to reconnect to the server after this play
 - name: Disabling password authentication and empty passwords
   hosts: all

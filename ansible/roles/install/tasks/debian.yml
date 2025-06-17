@@ -1,3 +1,4 @@
+---
 - name: "Install packages: {{ packages }}"
   ansible.builtin.apt:
     name: "{{ packages }}"

@@ -1,3 +1,4 @@
+---
 # Initial server setup (see: https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu-22-04)
 # I recommend running every playbook with a non-root user that is able to elevate his privileges, with SSH keys.
 # However, this playbook assumes that you are using a root user with a password, as you may not have yet set up a user
@@ -20,7 +21,7 @@
         shell: "{{ item.shell | default('/bin/bash') }}"
         groups: "{{ item.groups | default('') }}"
         password: "{{ item.password }}"
-        append: yes
+        append: true
       with_items: "{{ create_users | default([]) }}"
       no_log: true
       # become: true

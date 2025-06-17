@@ -1,10 +1,11 @@
+---
 # Joining K8s cluster (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/)
 - name: Generating K8s token and join command
   hosts: init_controller # the specified node MUST be part of the cluster already
 
   tasks:
     - name: Generate join token and store join command
-      ansible.builtin.shell: kubeadm token create --print-join-command
+      ansible.builtin.command: kubeadm token create --print-join-command
       register: join_cmd
 
     - name: Getting cluster nodes
@@ -18,10 +19,10 @@
     node_name_with_default: "{{ node_name | default(inventory_hostname) }}"
 
   tasks:
+    # Only join if the current controller is not part of the cluster already, as indicated by `kubectl get nodes`,
+    # as init_controller MUST be part of the cluster already it's node name will be included in the list as well.
     - name: Join new controller nodes as control plane
-      ansible.builtin.shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }} --control-plane"
-      # Only join if the current controller is not part of the cluster already, as indicated by `kubectl get nodes`,
-      # as init_controller MUST be part of the cluster already it's node name will be included in the list as well.
+      ansible.builtin.command: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }} --control-plane"
       when: node_name_with_default not in nodes.stdout_lines
 
 - name: Making worker nodes join the cluster
@@ -42,22 +43,22 @@
       when: is_control_plane
       changed_when: false
 
+    # only runs if the target is also a control plane, this is disabled by default for security therefore not
+    # recommended, but may be required in a single machine cluster
     - name: Allowing pods to be run on control-plane if necessary
-      ansible.builtin.shell: kubectl taint node {{ node_name_with_default }} node-role.kubernetes.io/control-plane- --validate=ignore
-      # only runs if the target is also a control plane, this is disabled by default for security therefore not
-      # recommended, but may be required in a single machine cluster
+      ansible.builtin.command: kubectl taint node {{ node_name_with_default }} node-role.kubernetes.io/control-plane- --validate=ignore
       when:
         - is_control_plane
         - has_taint.stdout == "true"
 
     - name: Allowing control-plane to be targed by load-balancer
-      ansible.builtin.shell: kubectl label node {{ node_name_with_default }} node.kubernetes.io/exclude-from-external-load-balancers-
+      ansible.builtin.command: kubectl label node {{ node_name_with_default }} node.kubernetes.io/exclude-from-external-load-balancers-
       register: label_removed
       changed_when: "'not found' not in label_removed.stdout"
       when: is_control_plane
 
     - name: Joining cluster
-      ansible.builtin.shell: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }}"
+      ansible.builtin.command: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }}"
       when:
         # the not control plane check is necessary as this may be a newly joined controller added by the previous play,
         # therefore may not yet have been part of the `kubectl get nodes` output
