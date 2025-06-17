@@ -45,7 +45,9 @@
       register: web_deployment
 
     - name: Deploying web test container for testing
-      ansible.builtin.command: kubectl apply -f {{ web_deployment.dest }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ web_deployment.dest }}"
       when: web_deployment.changed
 
     - name: Pausing for verification
@@ -54,7 +56,9 @@
       when: web_deployment.changed
 
     - name: Removing web test container
-      ansible.builtin.command: kubectl delete -f {{ web_deployment.dest }}
+      kubernetes.core.k8s:
+        state: absent
+        src: "{{ web_deployment.dest }}"
       when: web_deployment.changed
 
     - name: Removing web test container configuration

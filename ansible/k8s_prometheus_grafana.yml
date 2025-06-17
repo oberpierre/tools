@@ -86,4 +86,6 @@
       register: ingress
 
     - name: Applying Grafana ingress
-      ansible.builtin.command: kubectl apply -f {{ ingress.dest }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ ingress.dest }}"

@@ -49,7 +49,7 @@
         mode: "0600"
       become: true
 
-    - name: Installing pod network add-on
-      ansible.builtin.shell: |
-        kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml \
-          >> {{ ansible_env.HOME }}/.kube/network_setup.log
+    - name: Installing pod network add-on (Flannel)
+      kubernetes.core.k8s:
+        state: present
+        src: https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml

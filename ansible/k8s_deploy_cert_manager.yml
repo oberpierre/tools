@@ -57,7 +57,10 @@
                       ingressClassName: nginx
 
     - name: Applying cluster-issuer config
-      ansible.builtin.command: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ ansible_env.HOME }}/.kube/cluster-issuer.yml"
+
     - name: Creating tls test container deployment
       ansible.builtin.template:
         lstrip_blocks: true
@@ -70,7 +73,9 @@
       register: tls_deployment
 
     - name: Deploying tls test container for testing
-      ansible.builtin.command: kubectl apply -f {{ tls_deployment.dest }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ tls_deployment.dest }}"
       when: tls_deployment.changed
 
     - name: Pausing for verification
@@ -79,7 +84,9 @@
       when: tls_deployment.changed
 
     - name: Removing tls test container
-      ansible.builtin.command: kubectl delete -f {{ tls_deployment.dest }}
+      kubernetes.core.k8s:
+        state: absent
+        src: "{{ tls_deployment.dest }}"
       when: tls_deployment.changed
 
     - name: Removing tls test container configuration
