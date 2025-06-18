@@ -64,9 +64,13 @@
       no_log: true # Values file contains secrets
 
     - name: Waiting for Grafana service to be available
-      ansible.builtin.command: kubectl get svc -n {{ prometheus_namespace }}
-      register: svc_output
-      until: '"{{ grafana_service_name }}" in svc_output.stdout'
+      kubernetes.core.k8s_info:
+        kind: Service
+        # Default service name for Grafana in kube-prometheus-stack is '{{ release_name }}-grafana'
+        name: "{{ grafana_service_name }}"
+        namespace: "{{ prometheus_namespace }}"
+      register: grafana_svc_info
+      until: grafana_svc_info.resources | length > 0
       retries: 10
       delay: 15
 

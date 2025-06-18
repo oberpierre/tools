@@ -1,7 +1,7 @@
 ---
 # Joining K8s cluster (see https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/)
 - name: Generating K8s token and join command
-  hosts: init_controller # the specified node MUST be part of the cluster already
+  hosts: init_controller # the specified node MUST be part of the cluster already, usually the node used to initialize the cluster with k8s_init_cluster.yml
 
   tasks:
     - name: Generate join token and store join command
@@ -9,8 +9,9 @@
       register: join_cmd
 
     - name: Getting cluster nodes
-      ansible.builtin.shell: kubectl get nodes | awk 'NR > 1 {print $1}'
-      register: nodes
+      kubernetes.core.k8s_info:
+        kind: Node
+      register: k8s_nodes
       changed_when: false
 
 - name: Making control planes join the cluster
@@ -23,7 +24,8 @@
     # as init_controller MUST be part of the cluster already it's node name will be included in the list as well.
     - name: Join new controller nodes as control plane
       ansible.builtin.command: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }} --control-plane"
-      when: node_name_with_default not in nodes.stdout_lines
+      when:
+        - node_name_with_default not in (k8s_nodes.resources | map(attribute='metadata.name') | list)
 
 - name: Making worker nodes join the cluster
   hosts: worker
@@ -36,20 +38,27 @@
         is_control_plane: inventory_hostname in groups['controller']
 
     - name: Checking if node has control-plane taint
-      ansible.builtin.shell: |
-        kubectl get node {{ node_name_with_default }} -o json | \
-          jq '.spec.taints? // [] | map(.key) | contains(["node-role.kubernetes.io/control-plane"])'
-      register: has_taint
+      kubernetes.core.k8s_info:
+        kind: Node
+        name: "{{ node_name_with_default }}"
+      register: node_info
       when: is_control_plane
       changed_when: false
 
-    # only runs if the target is also a control plane, this is disabled by default for security therefore not
-    # recommended, but may be required in a single machine cluster
+    - name: Set fact for control-plane taint existence
+      ansible.builtin.set_fact:
+        has_control_plane_taint: "{{ node_info.resources[0].spec.taints | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane') | list | length > 0 }}"
+      when:
+        - is_control_plane
+        - node_info.resources is defined
+        - node_info.resources | length > 0
+        - node_info.resources[0].spec.taints is defined
+
     - name: Allowing pods to be run on control-plane if necessary
       ansible.builtin.command: kubectl taint node {{ node_name_with_default }} node-role.kubernetes.io/control-plane- --validate=ignore
       when:
         - is_control_plane
-        - has_taint.stdout == "true"
+        - has_control_plane_taint | default(false)
 
     - name: Allowing control-plane to be targed by load-balancer
       ansible.builtin.command: kubectl label node {{ node_name_with_default }} node.kubernetes.io/exclude-from-external-load-balancers-
@@ -61,7 +70,7 @@
       ansible.builtin.command: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }}"
       when:
         # the not control plane check is necessary as this may be a newly joined controller added by the previous play,
-        # therefore may not yet have been part of the `kubectl get nodes` output
+        # therefore may not yet have been part of the `k8s_nodes` output
         - not is_control_plane
-        - node_name_with_default not in nodes.stdout_lines
+        - node_name_with_default not in (k8s_nodes.resources | map(attribute='metadata.name') | list)
       become: true
