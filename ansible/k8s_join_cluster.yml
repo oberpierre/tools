@@ -54,16 +54,30 @@
         - node_info.resources | length > 0
         - node_info.resources[0].spec.taints is defined
 
+    # Running this task will allow pods to be scheduled on the control plane node.
+    # This is disabled by default for security reasons, but may be necessary in a single-node cluster.
     - name: Allowing pods to be run on control-plane if necessary
-      ansible.builtin.command: kubectl taint node {{ node_name_with_default }} node-role.kubernetes.io/control-plane- --validate=ignore
+      kubernetes.core.k8s_taint:
+        state: absent
+        name: "{{ node_name_with_default }}"
+        taints:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
       when:
         - is_control_plane
         - has_control_plane_taint | default(false)
 
-    - name: Allowing control-plane to be targed by load-balancer
-      ansible.builtin.command: kubectl label node {{ node_name_with_default }} node.kubernetes.io/exclude-from-external-load-balancers-
-      register: label_removed
-      changed_when: "'not found' not in label_removed.stdout"
+    - name: Allowing control-plane to be targeted by load-balancer
+      kubernetes.core.k8s:
+        state: patched
+        kind: Node
+        name: "{{ node_name_with_default }}"
+        api_version: v1
+        merge_type: strategic-merge
+        definition:
+          metadata:
+            labels:
+              node.kubernetes.io/exclude-from-external-load-balancers: null
       when: is_control_plane
 
     - name: Joining cluster
