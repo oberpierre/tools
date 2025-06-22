@@ -62,37 +62,35 @@
         state: present
         src: "{{ ansible_env.HOME }}/.kube/cluster-issuer.yml"
 
-    - name: Creating tls test container deployment
-      ansible.builtin.template:
-        lstrip_blocks: true
-        src: templates/ingress_deployment.j2
-        dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
-        mode: "0600"
-      vars:
-        app_name: "{{ test_app_name }}"
-        tls_hosts: "{{ test_domains }}"
+    - name: Deploy, verify and clean up test container
       when: test_domains
-      register: tls_deployment
+      block:
+        - name: Creating tls test container deployment
+          ansible.builtin.template:
+            lstrip_blocks: true
+            src: templates/ingress_deployment.j2
+            dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
+            mode: "0600"
+          vars:
+            app_name: "{{ test_app_name }}"
+            tls_hosts: "{{ test_domains }}"
+          register: tls_deployment
 
-    - name: Deploying tls test container for testing
-      kubernetes.core.k8s:
-        state: present
-        src: "{{ tls_deployment.dest }}"
-      when: tls_deployment.changed
+        - name: Deploying tls test container for testing
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ tls_deployment.dest }}"
 
-    - name: Pausing for verification
-      ansible.builtin.pause:
-        prompt: Verify if you can publicly reach {{ test_domains }} using https. Press [Enter] to continue
-      when: tls_deployment.changed
+        - name: Pausing for verification
+          ansible.builtin.pause:
+            prompt: Verify if you can publicly reach {{ test_domains }} using https. Press [Enter] to continue
 
-    - name: Removing tls test container
-      kubernetes.core.k8s:
-        state: absent
-        src: "{{ tls_deployment.dest }}"
-      when: tls_deployment.changed
+        - name: Removing tls test container
+          kubernetes.core.k8s:
+            state: absent
+            src: "{{ tls_deployment.dest }}"
 
-    - name: Removing tls test container configuration
-      ansible.builtin.file:
-        path: "{{ tls_deployment.dest }}"
-        state: absent
-      when: tls_deployment.changed
+        - name: Removing tls test container configuration
+          ansible.builtin.file:
+            path: "{{ tls_deployment.dest }}"
+            state: absent
