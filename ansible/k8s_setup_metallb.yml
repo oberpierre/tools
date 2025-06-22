@@ -9,11 +9,27 @@
     - helm
 
   tasks:
-    - name: Setting strictARP to true
-      ansible.builtin.shell: |
-        kubectl get configmap kube-proxy -n kube-system -o yaml | \
-        sed -e "s/strictARP: false/strictARP: true/" | \
-        kubectl apply -f - -n kube-system
+    - name: Get kube-proxy configmap
+      kubernetes.core.k8s_info:
+        kind: ConfigMap
+        name: kube-proxy
+        namespace: kube-system
+      register: kube_proxy_cm_info
+
+    - name: Update kube-proxy configmap to set strictARP to true
+      kubernetes.core.k8s:
+        state: present
+        definition: |
+          "{{ kube_proxy_cm_info.resources[0] | combine({'data': kube_proxy_cm_info.resources[0].data
+           | combine({'config.conf': (kube_proxy_cm_info.resources[0].data['config.conf']
+           | replace('strictARP: false', 'strictARP: true'))})}, recursive=True) }}"
+      when:
+        - kube_proxy_cm_info.resources | length > 0
+        - kube_proxy_cm_info.resources[0].data is defined
+        - kube_proxy_cm_info.resources[0].data['config.conf'] is defined
+        - "'strictARP: false' in kube_proxy_cm_info.resources[0].data['config.conf']"
+        # This ensures the task only runs if a change from 'false' to 'true' is needed.
+        # The k8s module itself is idempotent if the definition doesn't change.
 
     - name: Installing/Upgrading MetalLB
       kubernetes.core.helm:
