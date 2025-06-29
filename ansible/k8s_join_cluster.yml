@@ -47,7 +47,8 @@
 
     - name: Set fact for control-plane taint existence
       ansible.builtin.set_fact:
-        has_control_plane_taint: "{{ node_info.resources[0].spec.taints | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane') | list | length > 0 }}"
+        has_control_plane_taint: |
+          "{{ node_info.resources[0].spec.taints | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane') | list | length > 0 }}"
       when:
         - is_control_plane
         - node_info.resources is defined
@@ -77,7 +78,7 @@
         definition:
           metadata:
             labels:
-              node.kubernetes.io/exclude-from-external-load-balancers: null
+              node.kubernetes.io/exclude-from-external-load-balancers:
       when: is_control_plane
 
     - name: Joining cluster
