@@ -7,7 +7,7 @@
   ansible.builtin.import_role:
     name: install
   vars:
-    packages:
+    install_packages:
       - containerd.io
 
 - name: Starting containerd service

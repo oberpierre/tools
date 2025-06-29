@@ -11,7 +11,7 @@
       ansible.builtin.import_role:
         name: install
       vars:
-        packages:
+        install_packages:
           - open-iscsi
           - nfs-common
       become: true

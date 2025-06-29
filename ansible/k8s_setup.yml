@@ -12,7 +12,7 @@
       ansible.builtin.import_role:
         name: install
       vars:
-        packages:
+        install_packages:
           - jq
       become: true
 
@@ -46,7 +46,7 @@
       ansible.builtin.import_role:
         name: install
       vars:
-        packages:
+        install_packages:
           - kubectl
 
     # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane

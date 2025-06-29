@@ -1,7 +1,7 @@
 ---
-- name: "Install packages: {{ packages }}"
+- name: "Install packages: {{ install_packages }}"
   ansible.builtin.apt:
-    name: "{{ packages }}"
+    name: "{{ install_packages }}"
     state: latest
-    update_cache: "{{ update_cache | default(true) }}"
+    update_cache: "{{ install_update_cache | default(true) }}"
   become: true
