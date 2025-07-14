@@ -7,15 +7,6 @@
     - containerd
     - k8s
 
-  tasks:
-    - name: Installing jq
-      ansible.builtin.import_role:
-        name: install
-      vars:
-        install_packages:
-          - jq
-      become: true
-
 - name: Enabling worker ports
   hosts: worker
   become: true
