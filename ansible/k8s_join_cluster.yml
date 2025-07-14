@@ -7,6 +7,7 @@
     - name: Generate join token and store join command
       ansible.builtin.command: kubeadm token create --print-join-command
       register: join_cmd
+      changed_when: true # A new token is created or its TTL might be affected.
 
     - name: Getting cluster nodes
       kubernetes.core.k8s_info:
@@ -26,6 +27,7 @@
       ansible.builtin.command: "{{ join_cmd.stdout }} --node-name {{ node_name_with_default }} --control-plane"
       when:
         - node_name_with_default not in (k8s_nodes.resources | map(attribute='metadata.name') | list)
+      changed_when: true
 
 - name: Making worker nodes join the cluster
   hosts: worker
@@ -88,4 +90,5 @@
         # therefore may not yet have been part of the `k8s_nodes` output
         - not is_control_plane
         - node_name_with_default not in (k8s_nodes.resources | map(attribute='metadata.name') | list)
+      changed_when: true
       become: true
