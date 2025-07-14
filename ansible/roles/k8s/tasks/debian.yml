@@ -40,19 +40,25 @@
     name: "{{ item }}"
     value: "1"
     sysctl_file: /etc/sysctl.d/k8s.conf
-    reload: false
+    reload: true
   loop:
     - net.ipv4.ip_forward
     - net.bridge.bridge-nf-call-iptables
     - net.bridge.bridge-nf-call-ip6tables
   become: true
 
-- name: Reloading sysctl params
-  ansible.builtin.command: sysctl --system
+- name: Generating default containerd configuration
+  ansible.builtin.command: /usr/bin/containerd config default
+  register: containerd_default_config
+  changed_when: false
   become: true
 
-- name: Adding default containerd configuration
-  ansible.builtin.shell: /usr/bin/containerd config default > /etc/containerd/config.toml
+- name: Applying default containerd configuration
+  ansible.builtin.copy:
+    content: "{{ containerd_default_config.stdout }}"
+    dest: /etc/containerd/config.toml
+    mode: "0644"
+    backup: true
   become: true
 
 - name: Setting SystemdCgroup to true
