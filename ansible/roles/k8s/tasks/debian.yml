@@ -49,13 +49,13 @@
 
 - name: Generating default containerd configuration
   ansible.builtin.command: /usr/bin/containerd config default
-  register: containerd_default_config
+  register: k8s_containerd_default_config
   changed_when: false
   become: true
 
 - name: Applying default containerd configuration
   ansible.builtin.copy:
-    content: "{{ containerd_default_config.stdout }}"
+    content: "{{ k8s_containerd_default_config.stdout }}"
     dest: /etc/containerd/config.toml
     mode: "0644"
     backup: true
