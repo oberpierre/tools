@@ -12,8 +12,8 @@
         name: install
       vars:
         install_packages:
-          - open-iscsi
-          - nfs-common
+          - open-iscsi=2.1.9-3ubuntu4
+          - nfs-common=1:2.6.4-3ubuntu5
       become: true
 
     - name: Starting and enabling iscsi daemon

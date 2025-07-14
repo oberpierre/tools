@@ -8,4 +8,4 @@
     name: install
   vars:
     install_packages:
-      - helm
+      - helm=3.18.4-1
