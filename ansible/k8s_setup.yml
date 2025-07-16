@@ -38,7 +38,7 @@
         name: install
       vars:
         install_packages:
-          - kubectl=1.33.2
+          - kubectl=1.33.3-1.1
 
     # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
     - name: Allowing K8s control ports
