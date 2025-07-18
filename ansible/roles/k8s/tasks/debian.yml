@@ -49,23 +49,20 @@
 
 - name: Generating default containerd configuration
   ansible.builtin.command: /usr/bin/containerd config default
-  register: k8s_containerd_default_config
+  register: k8s_config
   changed_when: false
   become: true
 
-- name: Applying default containerd configuration
+- name: Setting SystemdCgroup to true in configuration
+  ansible.builtin.set_fact:
+    k8s_config_modified: "{{ k8s_config.stdout | regex_replace('^(\\s+)SystemdCgroup = false$', '\\1SystemdCgroup = true', multiline=True) }}"
+
+- name: Applying containerd configuration
   ansible.builtin.copy:
-    content: "{{ k8s_containerd_default_config.stdout }}"
+    content: "{{ k8s_config_modified }}"
     dest: /etc/containerd/config.toml
     mode: "0644"
     backup: true
-  become: true
-
-- name: Setting SystemdCgroup to true
-  ansible.builtin.replace:
-    path: /etc/containerd/config.toml
-    regexp: "^(\\s+)SystemdCgroup = false$"
-    replace: "\\1SystemdCgroup = true"
   become: true
 
 - name: Restarting containerd service
