@@ -65,6 +65,15 @@
     - name: Deploy, verify and clean up test container
       when: test_domains
       block:
+        - name: Creating namespace for tls test container deployment
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"
+
         - name: Creating tls test container deployment
           ansible.builtin.template:
             lstrip_blocks: true
@@ -73,6 +82,7 @@
             mode: "0600"
           vars:
             app_name: "{{ test_app_name }}"
+            metadata_namespace: "{{ test_app_name }}"
             tls_hosts: "{{ test_domains }}"
           register: tls_deployment
 
@@ -94,3 +104,12 @@
           ansible.builtin.file:
             path: "{{ tls_deployment.dest }}"
             state: absent
+
+        - name: Removing tls test container namespace
+          kubernetes.core.k8s:
+            state: absent
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"

@@ -36,6 +36,15 @@
     - name: Deploy, verify and clean up test container
       when: test_domains
       block:
+        - name: Creating namespace for test container deployment
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"
+
         - name: Creating web test container deployment
           ansible.builtin.template:
             lstrip_blocks: true
@@ -44,6 +53,7 @@
             mode: "0600"
           vars:
             app_name: "{{ test_app_name }}"
+            metadata_namespace: "{{ test_app_name }}"
             web_hosts: "{{ test_domains }}"
           register: web_deployment
 
@@ -65,3 +75,12 @@
           ansible.builtin.file:
             path: "{{ web_deployment.dest }}"
             state: absent
+
+        - name: Removing test namespace
+          kubernetes.core.k8s:
+            state: absent
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"
