@@ -38,6 +38,11 @@
         create_namespace: true
         state: present
         values:
+          config:
+            featureGates:
+              # Disable the use of Exact PathType in Ingress resources, to work around a bug in ingress-nginx
+              # https://github.com/kubernetes/ingress-nginx/issues/11176
+              ACMEHTTP01IngressPathTypeExact: false
           ingressShim:
             defaultIssuerName: "{{ cluster_issuer_name }}"
             defaultIssuerKind: ClusterIssuer
