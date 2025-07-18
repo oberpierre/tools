@@ -80,7 +80,7 @@
         definition:
           metadata:
             labels:
-              node.kubernetes.io/exclude-from-external-load-balancers:
+              node.kubernetes.io/exclude-from-external-load-balancers: null
       when: is_control_plane
 
     - name: Joining cluster
