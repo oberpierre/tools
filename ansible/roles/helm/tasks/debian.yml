@@ -1,3 +1,4 @@
+---
 - name: Adding Helm apt-key
   ansible.builtin.get_url:
     url: https://baltocdn.com/helm/signing.asc

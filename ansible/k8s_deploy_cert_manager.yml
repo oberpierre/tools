@@ -1,3 +1,4 @@
+---
 # Deploying cert manager: https://cert-manager.io/docs/installation/helm/#4-install-cert-manager
 - name: Deploying cert-manager
   hosts: init_controller
@@ -7,6 +8,7 @@
     test_domains: false
     # - test.example.com
     test_app_name: tls-test
+    cert_manager_version: v1.18.2
     cluster_issuer_email: admin@example.com
     cluster_issuer_name: letsencrypt-prod
     cluster_issuer_server: https://acme-v02.api.letsencrypt.org/directory
@@ -21,16 +23,26 @@
         state: directory
         mode: "0755"
 
+    - name: Installing/Upgrading cert-manager CRDs
+      kubernetes.core.k8s:
+        state: present
+        src: "https://github.com/cert-manager/cert-manager/releases/download/{{ cert_manager_version }}/cert-manager.crds.yaml"
+
     - name: Installing/Upgrading cert-manager
       kubernetes.core.helm:
         name: cert-manager
         chart_repo_url: https://charts.jetstack.io
         chart_ref: cert-manager
+        chart_version: "{{ cert_manager_version }}"
         release_namespace: cert-manager
         create_namespace: true
         state: present
         values:
-          crds.enabled: true
+          config:
+            featureGates:
+              # Disable the use of Exact PathType in Ingress resources, to work around a bug in ingress-nginx
+              # https://github.com/kubernetes/ingress-nginx/issues/11176
+              ACMEHTTP01IngressPathTypeExact: false
           ingressShim:
             defaultIssuerName: "{{ cluster_issuer_name }}"
             defaultIssuerKind: ClusterIssuer
@@ -39,6 +51,7 @@
     - name: Creating cluster-issuer config using letsencrypt ACME challenge
       ansible.builtin.copy:
         dest: "{{ ansible_env.HOME }}/.kube/cluster-issuer.yml"
+        mode: "0600"
         content: |
           apiVersion: cert-manager.io/v1
           kind: ClusterIssuer
@@ -56,34 +69,58 @@
                       ingressClassName: nginx
 
     - name: Applying cluster-issuer config
-      ansible.builtin.shell: kubectl apply -f {{ ansible_env.HOME }}/.kube/cluster-issuer.yml
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ ansible_env.HOME }}/.kube/cluster-issuer.yml"
 
-    - name: Creating tls test container deployment
-      ansible.builtin.template:
-        lstrip_blocks: true
-        src: templates/ingress_deployment.j2
-        dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
-      vars:
-        app_name: "{{ test_app_name }}"
-        tls_hosts: "{{ test_domains }}"
+    - name: Deploy, verify and clean up test container
       when: test_domains
-      register: tls_deployment
+      block:
+        - name: Creating namespace for tls test container deployment
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"
 
-    - name: Deploying tls test container for testing
-      ansible.builtin.shell: kubectl apply -f {{ tls_deployment.dest }}
-      when: tls_deployment.changed
+        - name: Creating tls test container deployment
+          ansible.builtin.template:
+            lstrip_blocks: true
+            src: templates/ingress_deployment.j2
+            dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
+            mode: "0600"
+          vars:
+            app_name: "{{ test_app_name }}"
+            metadata_namespace: "{{ test_app_name }}"
+            tls_hosts: "{{ test_domains }}"
+          register: tls_deployment
 
-    - name: Pausing for verification
-      ansible.builtin.pause:
-        prompt: Verify if you can publicly reach {{ test_domains }} using https. Press [Enter] to continue
-      when: tls_deployment.changed
+        - name: Deploying tls test container for testing
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ tls_deployment.dest }}"
 
-    - name: Removing tls test container
-      ansible.builtin.shell: kubectl delete -f {{ tls_deployment.dest }}
-      when: tls_deployment.changed
+        - name: Pausing for verification
+          ansible.builtin.pause:
+            prompt: Verify if you can publicly reach {{ test_domains }} using https. Press [Enter] to continue
 
-    - name: Removing tls test container configuration
-      ansible.builtin.file:
-        path: "{{ tls_deployment.dest }}"
-        state: absent
-      when: tls_deployment.changed
+        - name: Removing tls test container
+          kubernetes.core.k8s:
+            state: absent
+            src: "{{ tls_deployment.dest }}"
+
+        - name: Removing tls test container configuration
+          ansible.builtin.file:
+            path: "{{ tls_deployment.dest }}"
+            state: absent
+
+        - name: Removing tls test container namespace
+          kubernetes.core.k8s:
+            state: absent
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"

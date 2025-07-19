@@ -1,3 +1,4 @@
+---
 - name: Deploy kube-prometheus-stack with preconfigured dashboards
   hosts: init_controller
   vars:
@@ -24,6 +25,7 @@
     - name: Creating kube-prometheus-stack values file
       ansible.builtin.copy:
         dest: "{{ dest_folder.path }}/prometheus-values.yml"
+        mode: "0600"
         content: |
           grafana:
             adminUser: "{{ vault_grafana_user }}"
@@ -62,9 +64,13 @@
       no_log: true # Values file contains secrets
 
     - name: Waiting for Grafana service to be available
-      ansible.builtin.command: kubectl get svc -n {{ prometheus_namespace }}
-      register: svc_output
-      until: '"{{ grafana_service_name }}" in svc_output.stdout'
+      kubernetes.core.k8s_info:
+        kind: Service
+        # Default service name for Grafana in kube-prometheus-stack is '{{ release_name }}-grafana'
+        name: "{{ grafana_service_name }}"
+        namespace: "{{ prometheus_namespace }}"
+      register: grafana_svc_info
+      until: grafana_svc_info.resources | length > 0
       retries: 10
       delay: 15
 
@@ -73,6 +79,7 @@
         lstrip_blocks: true
         src: templates/ingress_deployment.j2
         dest: "{{ dest_folder.path }}/ingress.yml"
+        mode: "0600"
       vars:
         cluster_issuer_name: "{{ cluster_issuer }}"
         app_name: grafana
@@ -85,4 +92,6 @@
       register: ingress
 
     - name: Applying Grafana ingress
-      ansible.builtin.command: kubectl apply -f {{ ingress.dest }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ ingress.dest }}"

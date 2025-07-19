@@ -6,13 +6,15 @@ create_users:
   - name: admin
     # **NOTE**: Do not specify passwords directly in host_vars, use Ansible Vault
     # (https://docs.ansible.com/ansible/latest/vault_guide/vault.html) to store your secrets!
-    password: "{{ admin_password }}"
+    password: "{{ vault_admin_password }}"
     groups: sudo
   - name: serviceaccount
     shell: /usr/sbin/nologin
 ssh_pub_files:
   - name: admin
     file: ~/.ssh/admin_id_rsa.pub
+  - name: admin # Secondary ssh key to add for admin
+    file: ssh_keys/admin_id_ed25519.pub
 
 permit_root_login: false
 

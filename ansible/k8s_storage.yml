@@ -1,3 +1,4 @@
+---
 # Deploying persistent block storage using Longhorn: https://longhorn.io/docs/1.8.1/deploy/install/install-with-helm/
 - name: Installing prerequisites for Longhorn
   hosts: init_controller
@@ -10,9 +11,9 @@
       ansible.builtin.import_role:
         name: install
       vars:
-        packages:
-          - open-iscsi
-          - nfs-common
+        install_packages:
+          - open-iscsi=2.1.9-3ubuntu5.4
+          - nfs-common=1:2.6.4-3ubuntu5.1
       become: true
 
     - name: Starting and enabling iscsi daemon

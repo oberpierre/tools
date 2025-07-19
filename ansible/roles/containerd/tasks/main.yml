@@ -1,3 +1,4 @@
+---
 - name: OS specific containerd install
   ansible.builtin.import_tasks: debian.yml
   when: ansible_facts['os_family']|lower == 'debian'
@@ -6,8 +7,8 @@
   ansible.builtin.import_role:
     name: install
   vars:
-    packages:
-      - containerd.io
+    install_packages:
+      - containerd.io=1.7.27-1
 
 - name: Starting containerd service
   ansible.builtin.service:

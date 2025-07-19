@@ -1,3 +1,4 @@
+---
 # Creating kubeadm cluster (see https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/)
 - name: Initializing K8s cluster on controller
   hosts: init_controller
@@ -15,6 +16,7 @@
     - name: Creating kubeadm config file
       ansible.builtin.copy:
         dest: "{{ ansible_env.HOME }}/.kube/kubeadm-config.yml"
+        mode: "0600"
         content: |
           apiVersion: kubeadm.k8s.io/v1beta4
           kind: InitConfiguration
@@ -48,7 +50,7 @@
         mode: "0600"
       become: true
 
-    - name: Installing pod network add-on
-      ansible.builtin.shell: |
-        kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml \
-          >> {{ ansible_env.HOME }}/.kube/network_setup.log
+    - name: Installing pod network add-on (Flannel)
+      kubernetes.core.k8s:
+        state: present
+        src: https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml

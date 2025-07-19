@@ -1,3 +1,4 @@
+---
 - name: OS specific install
   ansible.builtin.import_tasks: debian.yml
   when: ansible_facts['os_family']|lower == 'debian'
@@ -6,6 +7,7 @@
   ansible.builtin.import_role:
     name: install
   vars:
-    packages:
-      - kubelet
-      - kubeadm
+    install_packages:
+      - kubelet=1.33.3-1.1
+      - kubeadm=1.33.3-1.1
+      - python3-kubernetes=22.6.0-2 # Required for to use kubernetes.core module

@@ -1,3 +1,4 @@
+---
 # NOTE: containerd is required to be installed (i.e. using install_docker.yml), but will be configured for use with K8s
 - name: Installing K8s with containerd
   hosts: controller,worker
@@ -5,15 +6,6 @@
   roles:
     - containerd
     - k8s
-
-  tasks:
-    - name: Installing jq
-      ansible.builtin.import_role:
-        name: install
-      vars:
-        packages:
-          - jq
-      become: true
 
 - name: Enabling worker ports
   hosts: worker
@@ -45,8 +37,8 @@
       ansible.builtin.import_role:
         name: install
       vars:
-        packages:
-          - kubectl
+        install_packages:
+          - kubectl=1.33.3-1.1
 
     # See https://kubernetes.io/docs/reference/networking/ports-and-protocols/ control plane
     - name: Allowing K8s control ports

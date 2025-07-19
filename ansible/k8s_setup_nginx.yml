@@ -1,3 +1,4 @@
+---
 # See https://kubernetes.github.io/ingress-nginx/deploy/
 - name: Deploying Ingress NGINX Controller
   hosts: init_controller
@@ -32,32 +33,54 @@
         mode: "0755"
       when: test_domains
 
-    - name: Creating web test container deployment
-      ansible.builtin.template:
-        lstrip_blocks: true
-        src: templates/ingress_deployment.j2
-        dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
-      vars:
-        app_name: "{{ test_app_name }}"
-        web_hosts: "{{ test_domains }}"
+    - name: Deploy, verify and clean up test container
       when: test_domains
-      register: web_deployment
+      block:
+        - name: Creating namespace for test container deployment
+          kubernetes.core.k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"
 
-    - name: Deploying web test container for testing
-      ansible.builtin.shell: kubectl apply -f {{ web_deployment.dest }}
-      when: web_deployment.changed
+        - name: Creating web test container deployment
+          ansible.builtin.template:
+            lstrip_blocks: true
+            src: templates/ingress_deployment.j2
+            dest: "{{ ansible_env.HOME }}/.kube/{{ test_app_name }}.yml"
+            mode: "0600"
+          vars:
+            app_name: "{{ test_app_name }}"
+            metadata_namespace: "{{ test_app_name }}"
+            web_hosts: "{{ test_domains }}"
+          register: web_deployment
 
-    - name: Pausing for verification
-      ansible.builtin.pause:
-        prompt: Verify if you can publicly reach your domains {{ test_domains }}. Press [Enter] to continue
-      when: web_deployment.changed
+        - name: Deploying web test container for testing
+          kubernetes.core.k8s:
+            state: present
+            src: "{{ web_deployment.dest }}"
 
-    - name: Removing web test container
-      ansible.builtin.shell: kubectl delete -f {{ web_deployment.dest }}
-      when: web_deployment.changed
+        - name: Pausing for verification
+          ansible.builtin.pause:
+            prompt: Verify if you can publicly reach your domains {{ test_domains }}. Press [Enter] to continue
 
-    - name: Removing web test container configuration
-      ansible.builtin.file:
-        path: "{{ web_deployment.dest }}"
-        state: absent
-      when: web_deployment.changed
+        - name: Removing web test container
+          kubernetes.core.k8s:
+            state: absent
+            src: "{{ web_deployment.dest }}"
+
+        - name: Removing web test container configuration
+          ansible.builtin.file:
+            path: "{{ web_deployment.dest }}"
+            state: absent
+
+        - name: Removing test namespace
+          kubernetes.core.k8s:
+            state: absent
+            definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: "{{ test_app_name }}"
