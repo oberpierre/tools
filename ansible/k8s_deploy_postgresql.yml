@@ -1,0 +1,58 @@
+- name: Deploying PostgreSQL
+  hosts: init_controller
+  vars:
+    postgresql_namespace: data-services
+    postgresql_secret_name: postgresql-credentials
+  vars_files:
+    - vars/example_user_vault.yml
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Creating namespace {{ postgresql_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ postgresql_namespace }}"
+
+    - name: Create PostgreSQL credentials secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ postgresql_secret_name }}"
+            namespace: "{{ postgresql_namespace }}"
+          type: Opaque
+          data:
+            postgres-password: "{{ vault_postgresql_admin_password | b64encode }}"
+            password: "{{ vault_postgresql_password | b64encode }}"
+      no_log: true
+
+    - name: Installing/Upgrading PostgreSQL
+      kubernetes.core.helm:
+        name: postgresql
+        chart_repo_url: https://charts.bitnami.com/bitnami
+        chart_ref: postgresql
+        release_namespace: "{{ postgresql_namespace }}"
+        state: present
+        values:
+          auth:
+            username: "{{ vault_postgresql_user }}"
+            existingSecret: "{{ postgresql_secret_name }}"
+
+          primary:
+            persistence:
+              enabled: true
+              size: 8Gi
+              storageClassName: longhorn
+
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
