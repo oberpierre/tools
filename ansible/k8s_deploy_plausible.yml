@@ -1,0 +1,73 @@
+- name: Deploying Plausible Analytics
+  hosts: init_controller
+  vars:
+    clickhouse_namespace: data-services
+    plausible_db: plausible-analytics
+    plausible_events_db: plausible_events_db
+    postgresql_namespace: data-services
+  vars_files:
+    - vars/example_user_vault.yml
+
+  roles:
+    - helm
+
+  tasks:
+    # - name: Deploying prerequisite PostgreSQL instance
+    #   ansible.builtin.inclue_tasks:
+    #     file: k8s_deploy_postgresql.yml
+
+    # - name: Deploying prerequisite ClickHouse instance
+    #   ansible.builtin.inclue_tasks:
+    #     file: k8s_deploy_clickhouse.yml
+
+    - name: Waiting for ClickHouse StatefulSet to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: StatefulSet
+        name: clickhouse-shard0
+        namespace: "{{ clickhouse_namespace }}"
+      register: clickhouse_sts
+      until:
+        - clickhouse_sts.resources is defined
+        - clickhouse_sts.resources | length > 0
+        - (clickhouse_sts.resources[0].status.readyReplicas | default(0) | int) == (clickhouse_sts.resources[0].spec.replicas | default(1) | int)
+        - (clickhouse_sts.resources[0].status.updatedReplicas | default(0) | int) == (clickhouse_sts.resources[0].spec.replicas | default(1) | int)
+        - (clickhouse_sts.resources[0].status.currentReplicas | default(0) | int) == (clickhouse_sts.resources[0].spec.replicas | default(1) | int)
+      retries: 10
+      delay: 15
+
+    - name: Creating ClickHouse database
+      kubernetes.core.k8s_exec:
+        namespace: "{{ clickhouse_namespace }}"
+        pod: clickhouse-shard0-0
+        command: >-
+          clickhouse-client --user={{ vault_clickhouse_user }} --password="{{ vault_clickhouse_password }}"
+          --query="CREATE DATABASE \"{{ plausible_events_db }}\""
+      register: clickhouse_db_result
+      changed_when:
+        - clickhouse_db_result.rc == 0
+        - "'already exists' not in (clickhouse_db_result.stderr | default(''))"
+      failed_when:
+        - clickhouse_db_result.rc != 0
+        - "'already exists' not in (clickhouse_db_result.stderr | default(''))"
+      no_log: true
+
+    - name: Creating PostgreSQL database
+      kubernetes.core.k8s_exec:
+        namespace: "{{ postgresql_namespace }}"
+        pod: postgresql-0
+        command: >-
+          /bin/bash -c 'PGPASSWORD="{{ vault_postgresql_password }}"
+          psql --username={{ vault_postgresql_user }}
+          --command="CREATE DATABASE \"{{ plausible_db }}\""
+          --dbname=postgres'
+      register: postgresql_db_result
+      changed_when:
+        - postgresql_db_result.rc == 0
+        - "'already exists' not in (postgresql_db_result.stderr | default(''))"
+      failed_when:
+        - postgresql_db_result.rc != 0
+        - "'already exists' not in (postgresql_db_result.stderr | default(''))"
+      no_log: true
+
+    # TODO: Installing Plausible Analytics
