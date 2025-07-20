@@ -19,7 +19,7 @@
           metadata:
             name: "{{ postgresql_namespace }}"
 
-    - name: Create PostgreSQL credentials secret
+    - name: Creating PostgreSQL secret
       kubernetes.core.k8s:
         state: present
         definition:
