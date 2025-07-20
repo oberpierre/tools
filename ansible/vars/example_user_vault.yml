@@ -5,5 +5,7 @@ vault_grafana_password: password
 vault_postgresql_admin_password: password # Password for the "postgres" admin user
 vault_postgresql_user: postgres
 vault_postgresql_password: password
+vault_clickhouse_user: clickhouse
+vault_clickhouse_password: password
 # Encrypt the vault as follows:
 # > ansible-vault encrypt example_user_vault.yml

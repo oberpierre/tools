@@ -1,0 +1,60 @@
+- name: Deploying ClickHouse
+  hosts: init_controller
+  vars:
+    clickhouse_namespace: data-services
+    clickhouse_secret_name: clickhouse-credentials
+  vars_files:
+    - vars/example_user_vault.yml
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Creating namespace {{ clickhouse_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ clickhouse_namespace }}"
+
+    - name: Creating ClickHouse secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ clickhouse_secret_name }}"
+            namespace: "{{ clickhouse_namespace }}"
+          type: Opaque
+          data:
+            admin-password: "{{ vault_clickhouse_password | b64encode }}"
+      no_log: true
+
+    - name: Installing/Upgrading ClickHouse
+      kubernetes.core.helm:
+        name: clickhouse
+        chart_repo_url: https://charts.bitnami.com/bitnami
+        chart_ref: clickhouse
+        release_namespace: "{{ clickhouse_namespace }}"
+        state: present
+        values:
+          replicaCount: 1
+          auth:
+            username: "{{ vault_clickhouse_user }}"
+            existingSecret: "{{ clickhouse_secret_name }}"
+            existingSecretKey: admin-password
+          persistence:
+            enabled: true
+            size: 8Gi
+            storageClass: longhorn
+
+          service:
+            type: ClusterIP
+
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
