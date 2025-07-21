@@ -2,9 +2,15 @@
   hosts: init_controller
   vars:
     clickhouse_namespace: data-services
+    clickhouse_svc_name: clickhouse
+    plausible_hosts:
+      - plausible.obermaier.dev
+    plausible_base_url: "https://{{ plausible_hosts[0] }}"
     plausible_db: plausible-analytics
     plausible_events_db: plausible_events_db
+    plausible_namespace: analytics
     postgresql_namespace: data-services
+    postgresql_svc_name: postgresql
   vars_files:
     - vars/example_user_vault.yml
 
@@ -70,4 +76,41 @@
         - "'already exists' not in (postgresql_db_result.stderr | default(''))"
       no_log: true
 
-    # TODO: Installing Plausible Analytics
+    - name: Installing/Upgrading Plausible Analytics
+      kubernetes.core.helm:
+        name: plausible-analytics
+        chart_repo_url: https://imio.github.io/helm-charts
+        chart_ref: plausible-analytics
+        release_namespace: "{{ plausible_namespace }}"
+        create_namespace: true
+        state: present
+        values:
+          disableRegistration: true
+          baseURL: "{{ plausible_base_url }}"
+          databaseURL: >-
+            postgres://{{ vault_postgresql_user }}:{{ vault_postgresql_password }}@
+            {{ postgresql_svc_name }}.{{ postgresql_namespace }}.svc.cluster.local:5432/{{ plausible_db }}
+          clickhouseDatabaseURL: >-
+            http://{{ vault_clickhouse_user }}:{{ vault_clickhouse_password }}@
+            {{ clickhouse_svc_name }}.{{ clickhouse_namespace }}.svc.cluster.local:8123/{{ plausible_events_db }}
+
+          clickhouse:
+            enabled: false # we are using external clickhouse & postgresql instances
+          postgresql:
+            enabled: false
+
+    - name: Waiting for Plausible service to be available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: plausible-analytics
+        namespace: "{{ plausible_namespace }}"
+      register: plausible_deployment
+      until:
+        - plausible_deployment.resources is defined
+        - plausible_deployment.resources | length > 0
+        - (plausible_deployment.resources[0].status.availableReplicas | default(0) | int) > 0
+        - (plausible_deployment.resources[0].status.readyReplicas | default(0) | int) > 0
+        - (plausible_deployment.resources[0].status.updatedReplicas | default(0) | int) == (plausible_deployment.resources[0].spec.replicas | default(1) | int)
+      retries: 10
+      delay: 15
