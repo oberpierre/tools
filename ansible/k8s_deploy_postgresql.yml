@@ -1,3 +1,4 @@
+---
 - name: Deploying PostgreSQL
   hosts: init_controller
   vars:

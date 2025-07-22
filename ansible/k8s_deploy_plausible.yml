@@ -1,3 +1,4 @@
+---
 - name: Deploying Plausible Analytics
   hosts: init_controller
   vars:
