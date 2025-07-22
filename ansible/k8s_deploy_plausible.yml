@@ -68,9 +68,7 @@
         pod: postgresql-0
         command: >-
           /bin/bash -c 'PGPASSWORD="{{ vault_postgresql_password }}"
-          psql --username={{ vault_postgresql_user }}
-          --command="CREATE DATABASE \"{{ plausible_db }}\""
-          --dbname=postgres'
+          createdb --username={{ vault_postgresql_user }} "{{ plausible_db }}"'
       register: postgresql_db_result
       changed_when:
         - postgresql_db_result.rc == 0
