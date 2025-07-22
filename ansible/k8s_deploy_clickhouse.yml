@@ -1,3 +1,4 @@
+---
 - name: Deploying ClickHouse
   hosts: init_controller
   vars:
