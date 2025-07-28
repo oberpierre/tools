@@ -1,0 +1,43 @@
+---
+- name: Deploying cert-manager
+  hosts: init_controller
+  vars:
+    cluster_issuer_name: "letsencrypt-prod"
+    app_name: app
+    app_namespace: default
+    app_folder: apps
+    app_domains:
+      - app.example.com
+    container_image: "nginxdemos/nginx-hello:latest"
+    container_port: 8080
+
+  tasks:
+    - name: Create namespace if it doesn't exist
+      kubernetes.core.k8s:
+        name: "{{ app_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create app directory for manifests
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/{{ app_folder }}"
+        state: directory
+        mode: "0755"
+      register: app_dir
+
+    - name: Deploy nginx/hello for testing
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/ingress_deployment.j2
+        dest: "{{ app_dir.path }}/{{ app_name }}.yml"
+        mode: "0600"
+      vars:
+        metadata_namespace: "{{ app_namespace }}"
+        tls_hosts: "{{ app_domains }}"
+      register: app_deployment
+
+    - name: Deploying application {{ app_name }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ app_deployment.dest }}"
