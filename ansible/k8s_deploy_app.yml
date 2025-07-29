@@ -1,21 +1,6 @@
 ---
-- name: Deploying cert-manager
-  hosts: init_controller
-  vars:
-    cluster_issuer_name: "letsencrypt-prod"
-    app_name: app
-    app_namespace: default
-    app_folder: apps
-    app_domains:
-      - app.example.com
-    container_image: ghcr.io/{{ vault_registry_username }}/example:latest
-    container_port: 8080
-    registry:
-      host: ghcr.io
-      username: "{{ vault_registry_username }}"
-      password: "{{ vault_registry_password }}"
-  vars_files:
-    - vars/example_user_vault.yml
+- name: Deploying application to Kubernetes
+  hosts: all
 
   tasks:
     - name: Create namespace if it doesn't exist

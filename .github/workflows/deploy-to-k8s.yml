@@ -1,0 +1,63 @@
+name: Deploy to Kubernetes
+on:
+  workflow_call:
+    inputs:
+        ansible_var_file:
+            description: 'Path to the variable file (relative to the calling repository root) to pass to ansible. DO NOT specify secrets here.'
+            required: true
+            type: string
+        ansible_inventory_content:
+            description: 'Content of the Ansible inventory file to use for deployment.'
+            required: true
+            type: string
+    secrets:
+      registry_password:
+        description: 'Password for the container registry. May be a personal access token, GITHUB_TOKEN, or password.'
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout calling repository
+      uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+            ${{ inputs.ansible_var_file }}
+        sparse-checkout-cone-mode: false
+        path: app
+
+    - name: Checkout tools repository
+      uses: actions/checkout@v4
+      with:
+        repository: oberpierre/tools
+        ref: feature/container-deployment
+        sparse-checkout: |
+            ansible/**/*
+        path: tools
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Ansible and dependencies
+      run: |
+        cd tools/ansible
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install Ansible collections
+      run: |
+        cd tools/ansible
+        ansible-galaxy collection install -r galaxy_requirements.yml
+
+    - name: Deploy application to Kubernetes
+      run: |
+        cd tools/ansible
+        echo "${{ inputs.ansible_inventory_content }}" > inventory
+        ansible-playbook k8s_deploy_app.yml -i inventory \
+          --extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}"
+      env:
+        REGISTRY_PASSWORD: ${{ secrets.registry_password }}
