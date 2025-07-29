@@ -42,6 +42,9 @@
               }
             }
           })}}
+        reg_secret_name: "{{ app_name }}-regcred"
+        reg_pull_secrets:
+          - name: "{{ app_name }}-regcred"
       when: registry is defined and registry.host is defined and registry.username is defined and registry.password is defined
       no_log: true
 
@@ -52,7 +55,7 @@
           apiVersion: v1
           kind: Secret
           metadata:
-            name: "{{ app_name }}-regcred"
+            name: "{{ reg_secret_name }}"
             namespace: "{{ app_namespace }}"
           type: kubernetes.io/dockerconfigjson
           data:
@@ -69,7 +72,7 @@
       vars:
         metadata_namespace: "{{ app_namespace }}"
         tls_hosts: "{{ app_domains }}"
-        image_pull_secrets: "{{ reg_auth is defined and [{'name': app_name + '-regcred'}] or omit }}"
+        image_pull_secrets: "{{ reg_pull_secrets }}"
       register: app_deployment
 
     - name: Deploying application {{ app_name }}
