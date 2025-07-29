@@ -8,8 +8,14 @@
     app_folder: apps
     app_domains:
       - app.example.com
-    container_image: "nginxdemos/nginx-hello:latest"
+    container_image: ghcr.io/{{ vault_registry_username }}/example:latest
     container_port: 8080
+    registry:
+      host: ghcr.io
+      username: "{{ vault_registry_username }}"
+      password: "{{ vault_registry_password }}"
+  vars_files:
+    - vars/example_user_vault.yml
 
   tasks:
     - name: Create namespace if it doesn't exist
@@ -26,7 +32,35 @@
         mode: "0755"
       register: app_dir
 
-    - name: Deploy nginx/hello for testing
+    - name: Create dockerconfigjson content for registry authentication
+      ansible.builtin.set_fact:
+        reg_auth: >-
+          {{ reg_auth | default({}) | combine({
+            "auths": {
+              registry.host: {
+                "auth": "{{ (registry.username + ':' + registry.password) | b64encode }}",
+              }
+            }
+          })}}
+      when: registry is defined and registry.host is defined and registry.username is defined and registry.password is defined
+      no_log: true
+
+    - name: Create container registry secret for authentication
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ app_name }}-regcred"
+            namespace: "{{ app_namespace }}"
+          type: kubernetes.io/dockerconfigjson
+          data:
+            .dockerconfigjson: "{{ reg_auth | to_json | b64encode }}"
+      when: reg_auth is defined
+      no_log: true
+
+    - name: Deploy application manifest
       ansible.builtin.template:
         lstrip_blocks: true
         src: templates/ingress_deployment.j2
@@ -35,6 +69,7 @@
       vars:
         metadata_namespace: "{{ app_namespace }}"
         tls_hosts: "{{ app_domains }}"
+        image_pull_secrets: "{{ reg_auth is defined and [{'name': app_name + '-regcred'}] or omit }}"
       register: app_deployment
 
     - name: Deploying application {{ app_name }}
