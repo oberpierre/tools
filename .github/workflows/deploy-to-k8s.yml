@@ -34,7 +34,7 @@ jobs:
         repository: oberpierre/tools
         ref: feature/container-deployment
         sparse-checkout: |
-            ansible/**/*
+            ansible
         path: tools
         
     - name: Set up Python
