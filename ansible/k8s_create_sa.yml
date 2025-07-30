@@ -1,0 +1,134 @@
+---
+- name: Provision service account and emit a kubeconfig
+  hosts: init_controller
+
+  vars:
+    cluster_role_name: namespace-creator
+    cluster_role_binding_name: "{{ cluster_role_name }}-binding"
+    sa_name: k8s-namespace-creator
+    sa_namespace: kube-system
+    # Define the rules for the service account see: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole
+    # below is an example for a service account that can only create namespaces
+    sa_rules:
+      - apiGroups: [""]
+        resources: ["namespaces"]
+        verbs: ["create"]
+    kubeconfig_output_directory: "{{ ansible_env.HOME }}/.kube"
+    kubeconfig_output_path: "{{ kubeconfig_output_directory }}/kubeconfig-{{ sa_name }}.yaml"
+
+  tasks:
+    - name: Creating ServiceAccount, ClusterRole and ClusterRoleBinding
+      kubernetes.core.k8s:
+        state: present
+        definition: |-
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: {{ sa_name }}
+            namespace: {{ sa_namespace }}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: {{ cluster_role_name }}
+          rules: {{ sa_rules }}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: {{ cluster_role_binding_name }}
+          subjects:
+            - kind: ServiceAccount
+              name: {{ sa_name }}
+              namespace: {{ sa_namespace }}
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: {{ cluster_role_name }}
+
+    - name: Setting ServiceAccount's secret name
+      ansible.builtin.set_fact:
+        sa_secret_name: "{{ sa_name }}-token"
+
+    - name: Creating Secret for ServiceAccount token
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ sa_secret_name }}"
+            namespace: "{{ sa_namespace }}"
+            annotations:
+              kubernetes.io/service-account.name: "{{ sa_name }}"
+          type: kubernetes.io/service-account-token
+
+    - name: Fetching up the ServiceAccount information
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ServiceAccount
+        name: "{{ sa_name }}"
+        namespace: "{{ sa_namespace }}"
+      register: sa_info
+
+    - name: Waiting for secret to be populated with token data
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ sa_secret_name }}"
+        namespace: "{{ sa_namespace }}"
+        wait: true
+        wait_timeout: 60
+      register: secret_wait_result
+      until: secret_wait_result.resources[0].data.token is defined
+      retries: 5
+      delay: 10
+
+    - name: Fetching the Secret token and CA
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ sa_secret_name }}"
+        namespace: "{{ sa_namespace }}"
+      register: secret_info
+
+    - name: Setting CA and decoded token data
+      ansible.builtin.set_fact:
+        ca_data: "{{ secret_info.resources[0].data['ca.crt'] }}"
+        sa_token: "{{ secret_info.resources[0].data.token | b64decode }}"
+
+    - name: Getting cluster information
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: ConfigMap
+        name: cluster-info
+        namespace: kube-public
+      register: cluster_info
+
+    - name: Extracting cluster details from available sources
+      ansible.builtin.set_fact:
+        cluster_name: >-
+          {{ (cluster_info.resources[0].data.kubeconfig | from_yaml).clusters[0].name
+          if cluster_info.resources is defined and cluster_info.resources | length > 0 else 'kubernetes' }}
+        cluster_server: >-
+          {{ (cluster_info.resources[0].data.kubeconfig | from_yaml).clusters[0].cluster.server
+          if cluster_info.resources is defined and cluster_info.resources | length > 0 else 'https://kubernetes.default.svc.cluster.local:443' }}
+        cluster_ca_data: >-
+          {{ (cluster_info.resources[0].data.kubeconfig | from_yaml).clusters[0].cluster['certificate-authority-data']
+          if cluster_info.resources is defined and cluster_info.resources | length > 0 else ca_data }}
+
+    - name: Building a context name for this service account
+      ansible.builtin.set_fact:
+        context_name: "{{ sa_name }}@{{ cluster_name }}"
+
+    - name: Creating kubeconfig output directory
+      ansible.builtin.file:
+        path: "{{ kubeconfig_output_directory }}"
+        state: directory
+        mode: "0700"
+
+    - name: Creating kubeconfig manifest for the ServiceAccount
+      ansible.builtin.template:
+        src: templates/k8s_kubeconfig.yml.j2
+        dest: "{{ kubeconfig_output_path }}"
+        mode: "0600"
