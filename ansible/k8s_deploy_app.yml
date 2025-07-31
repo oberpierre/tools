@@ -19,18 +19,18 @@
 
     - name: Create dockerconfigjson content for registry authentication
       ansible.builtin.set_fact:
-        reg_auth: >-
-          {{ reg_auth | default({}) | combine({
-            "auths": {
-              registry.host: {
-                "auth": "{{ (registry.username + ':' + registry.password) | b64encode }}",
-              }
-            }
-          })}}
+        reg_auth_string: "{{ (registry.username + ':' + registry.password) | b64encode }}"
         reg_secret_name: "{{ app_name }}-regcred"
         reg_pull_secrets:
           - name: "{{ app_name }}-regcred"
       when: registry is defined and registry.host is defined and registry.username is defined and registry.password is defined
+      no_log: true
+
+    - name: Build registry auth structure
+      ansible.builtin.set_fact:
+        reg_auth:
+          auths: "{{ {registry.host: {'auth': reg_auth_string}} }}"
+      when: reg_auth_string is defined
       no_log: true
 
     - name: Create container registry secret for authentication
