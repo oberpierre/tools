@@ -51,7 +51,7 @@ kind: Ingress
 metadata:
   annotations:
     {% if tls_hosts is defined %}
-    cert-manager.io/cluster-issuer: {{ cluster_issuer_name }}
+    cert-manager.io/cluster-issuer: {{ cluster_issuer_name | default("letsencrypt-prod") }}
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     {% else %}
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
