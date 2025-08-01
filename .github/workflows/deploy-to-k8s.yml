@@ -6,6 +6,10 @@ on:
         description: "Path to the variable file (relative to the calling repository root) to pass to ansible. DO NOT specify secrets here."
         required: true
         type: string
+      container_image:
+        description: "Container image to deploy. For dynamic generation of the container image name, will be made available as CONTAINER_IMAGE environment variable and can be referenced as such in your Ansible variable file."
+        required: false
+        type: string
     secrets:
       ansible_inventory_content:
         description: "Content of the Ansible inventory file to use for deployment."
@@ -75,4 +79,5 @@ jobs:
           ansible-playbook k8s_deploy_app.yml -i inventory \
             --extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}"
         env:
+          CONTAINER_IMAGE: ${{ inputs.container_image }}
           REGISTRY_PASSWORD: ${{ secrets.registry_password }}
