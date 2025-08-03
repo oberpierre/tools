@@ -92,3 +92,24 @@ jobs:
       ssh_known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
 ```
+
+## Configuration Options
+
+### Ansible Variables
+
+| Variable              | Required | Description                                                                                              | Example                                                      |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `app_name`            | X        | Application name (used for Kubernetes resources)                                                         | `my-app`                                                     |
+| `app_namespace`       | X        | Kubernetes namespace                                                                                     | `production`                                                 |
+| `app_folder`          | X        | Local manifest storage path. You may use a common parent folder like `apps` to group deployments.        | `apps/{{ app_name }}/`                                       |
+| `app_domains`         | X        | List of domains for ingress                                                                              | `["app.example.com"]`                                        |
+| `container_image`     | X        | Container image to deploy                                                                                | `ghcr.io/user/app:latest`                                    |
+| `container_port`      |          | Container port                                                                                           | Default: `8080`                                              |
+| `service_port`        |          | Service port                                                                                             | Default: `80`                                                |
+| `replicas`            |          | Number of replicas                                                                                       | Default: `1`                                                 |
+| `cluster_issuer_name` |          | cert-manager cluster issuer name                                                                         | Default: `letsencrypt-prod`                                  |
+| `registry.host`       |          | Package registry host. Required for private package registry authentication.                             | `ghcr.io`, `docker.io`, etc.                                 |
+| `registry.username`   |          | Username to authenticate against package registry. Required for private package registry authentication. | `user`                                                       |
+| `registry.password`   |          | Password to authenticate against package registry. Required for private package registry authentication. | `"{{ lookup('ansible.builtin.env', 'REGISTRY_PASSWORD') }}"` |
+
+> **Note**: Do not directly specify secrets in your var file. Use the `REGISTRY_PASSWORD` environment variable like above.
