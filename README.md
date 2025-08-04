@@ -1,12 +1,17 @@
 # Tools &middot; [![CI](https://github.com/oberpierre/tools/actions/workflows/code-quality.yml/badge.svg)](https://github.com/oberpierre/tools/actions/workflows/code-quality.yml)
 
-This repository is a collection of tools and scripts designed to simplify and automate various tasks. Currently, it focuses on system administration automation using Ansible.
+This repository is a collection of tools and scripts designed to simplify and automate various tasks. It focuses on system administration automation using Ansible and provides a reusable GitHub workflow to deploy containerized applications to Kubernetes clusters via CI/CD pipelines.
+
+## Quick Links
+
+- **[Ansible Infrastructure Setup](ansible/README.md)** - Server setup and Kubernetes cluster management
+- **[Deployment Guide](DEPLOYMENT.md)** - Deploy applications to Kubernetes via GitHub reusable workflow
 
 ## Structure
 
-The project is organized into subdirectories, each dedicated to a specific type of tool or utility. Here is an overview of the current structure:
+The project is organized into subdirectories, each dedicated to a specific type of tool or utility:
 
-- [`/ansible`](./ansible/) - Contains Ansible playbooks and roles for initial server setup and configuration.
+- **[`/ansible`](./ansible/)** - Contains Ansible playbooks and roles for initial server setup and configuration.
 
 ## Getting Started
 
