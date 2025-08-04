@@ -31,7 +31,8 @@
           kind: ClusterRole
           metadata:
             name: {{ cluster_role_name }}
-          rules: {{ sa_rules }}
+          rules:
+            {{ sa_rules | to_nice_yaml(indent=2) | indent(2) | trim }}
           ---
           apiVersion: rbac.authorization.k8s.io/v1
           kind: ClusterRoleBinding
