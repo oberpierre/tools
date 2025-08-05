@@ -60,7 +60,21 @@
         image_pull_secrets: "{{ reg_pull_secrets | default(omit) }}"
       register: app_deployment
 
-    - name: Deploying application {{ app_name }}
+    - name: Deploy application {{ app_name }}
       kubernetes.core.k8s:
         state: present
         src: "{{ app_deployment.dest }}"
+
+    - name: Wait for application deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ app_name }}"
+        namespace: "{{ app_namespace }}"
+      register: deployment_info
+      until:
+        - deployment_info.resources | length > 0
+        - deployment_info.resources[0].status.readyReplicas | default(0) == deployment_info.resources[0].spec.replicas | default(1)
+      retries: 10
+      delay: 15
+      when: (wait_for_deployment | default(true)) | bool
