@@ -21,10 +21,14 @@ spec:
         app: {{ app_name }}
     spec:
       containers:
-      - name: {{ app_name }}
-        image: {{ container_image | default("nginxdemos/nginx-hello:latest") }}
-        ports:
-        - containerPort: {{ container_port | default(8080) }}
+        - name: {{ app_name }}
+          image: {{ container_image | default("nginxdemos/nginx-hello:latest") }}
+          ports:
+          - containerPort: {{ container_port | default(8080) }}
+      {% if image_pull_secrets is defined and image_pull_secrets|length > 0 %}
+      imagePullSecrets:
+        {{ image_pull_secrets | to_nice_yaml(indent=2) | indent(8) }}
+      {% endif %}
 ---
 {% endif %}
 {% if create_service_val %}
@@ -50,7 +54,7 @@ kind: Ingress
 metadata:
   annotations:
     {% if tls_hosts is defined %}
-    cert-manager.io/cluster-issuer: {{ cluster_issuer_name }}
+    cert-manager.io/cluster-issuer: {{ cluster_issuer_name | default("letsencrypt-prod") }}
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     {% else %}
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
@@ -65,27 +69,27 @@ spec:
   {% if tls_hosts is defined %}
   tls:
     - hosts:
-      {% for item in tls_hosts %}
-      - {{ item }}
-      {% endfor %}
+        {% for item in tls_hosts %}
+        - {{ item }}
+        {% endfor %}
       secretName: {{ app_name }}-cert
   {% endif %}
   rules:
-  {% for item in tls_hosts | default(web_hosts) %}
-  - host: {{ item }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            {% if create_service_val %}
-            name: {{ app_name }}-svc
-            port:
-              number: {{ service_port | default(80) }}
-            {% else %}
-            name: {{ external_service_name }}
-            port:
-              number: {{ external_service_port }}
-            {% endif %}
-  {% endfor %}
+    {% for item in tls_hosts | default(web_hosts) %}
+    - host: {{ item }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                {% if create_service_val %}
+                name: {{ app_name }}-svc
+                port:
+                  number: {{ service_port | default(80) }}
+                {% else %}
+                name: {{ external_service_name }}
+                port:
+                  number: {{ external_service_port }}
+                {% endif %}
+    {% endfor %}

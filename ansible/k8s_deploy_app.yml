@@ -1,0 +1,94 @@
+---
+- name: Deploying application to Kubernetes
+  hosts: all
+
+  tasks:
+    - name: Create namespace if it doesn't exist
+      kubernetes.core.k8s:
+        name: "{{ app_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Create app directory for manifests
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/{{ app_folder }}"
+        state: directory
+        mode: "0755"
+      register: app_dir
+
+    - name: Create dockerconfigjson content for registry authentication
+      ansible.builtin.set_fact:
+        reg_auth_string: "{{ (registry.username + ':' + registry.password) | b64encode }}"
+        reg_secret_name: "{{ app_name }}-regcred"
+        reg_pull_secrets:
+          - name: "{{ app_name }}-regcred"
+      when: registry is defined and registry.host is defined and registry.username is defined and registry.password is defined
+      no_log: true
+
+    - name: Build registry auth structure
+      ansible.builtin.set_fact:
+        reg_auth:
+          auths: "{{ {registry.host: {'auth': reg_auth_string}} }}"
+      when: reg_auth_string is defined
+      no_log: true
+
+    - name: Create container registry secret for authentication
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ reg_secret_name }}"
+            namespace: "{{ app_namespace }}"
+          type: kubernetes.io/dockerconfigjson
+          data:
+            .dockerconfigjson: "{{ reg_auth | to_json | b64encode }}"
+      when: reg_auth is defined
+      no_log: true
+
+    - name: Create application manifest
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/ingress_deployment.j2
+        dest: "{{ app_dir.path }}/{{ app_name }}.yml"
+        mode: "0600"
+      vars:
+        metadata_namespace: "{{ app_namespace }}"
+        tls_hosts: "{{ app_domains }}"
+        image_pull_secrets: "{{ reg_pull_secrets | default(omit) }}"
+      register: app_deployment
+
+    - name: Deploy application {{ app_name }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ app_deployment.dest }}"
+
+    - name: Wait for application deployment to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ app_name }}-deployment"
+        namespace: "{{ app_namespace }}"
+      register: deployment_info
+      until:
+        - deployment_info.resources | length > 0
+        - deployment_info.resources[0].status.readyReplicas | default(0) == deployment_info.resources[0].spec.replicas | default(1)
+      retries: 10
+      delay: 15
+      when: (wait_for_deployment | default(true)) | bool
+      failed_when: false
+
+    - name: Show deployment status on failure
+      ansible.builtin.fail:
+        msg: |
+          Deployment failed to become ready. Current status:
+          - Ready replicas: {{ deployment_info.resources[0].status.readyReplicas | default(0) }}
+          - Desired replicas: {{ deployment_info.resources[0].spec.replicas | default(1) }}
+          - Conditions: {{ deployment_info.resources[0].status.conditions | default([]) }}
+
+          Check pod logs with: kubectl logs -n {{ app_namespace }} -l app={{ app_name }}
+      when:
+        - (wait_for_deployment | default(true)) | bool
+        - deployment_info.failed | default(false)
