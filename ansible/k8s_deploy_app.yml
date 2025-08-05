@@ -57,7 +57,7 @@
       vars:
         metadata_namespace: "{{ app_namespace }}"
         tls_hosts: "{{ app_domains }}"
-        image_pull_secrets: "{{ reg_pull_secrets }}"
+        image_pull_secrets: "{{ reg_pull_secrets | default(omit) }}"
       register: app_deployment
 
     - name: Deploying application {{ app_name }}
