@@ -48,7 +48,7 @@
       when: reg_auth is defined
       no_log: true
 
-    - name: Deploy application manifest
+    - name: Create application manifest
       ansible.builtin.template:
         lstrip_blocks: true
         src: templates/ingress_deployment.j2
