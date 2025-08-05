@@ -63,7 +63,7 @@ jobs:
           ansible-galaxy collection install -r galaxy_requirements.yml
 
       - name: Start ssh-agent and add key
-        uses: webfactory/ssh-agent@v0.5.4
+        uses: webfactory/ssh-agent@v0.9.1
         with:
           ssh-private-key: ${{ secrets.ssh_private_key }}
 
