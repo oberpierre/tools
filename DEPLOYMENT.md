@@ -107,6 +107,7 @@ jobs:
 | `container_port`      |          | Container port                                                                                           | Default: `8080`                                              |
 | `service_port`        |          | Service port                                                                                             | Default: `80`                                                |
 | `replicas`            |          | Number of replicas                                                                                       | Default: `1`                                                 |
+| `wait_for_deployment` |          | Whether to wait for the deployment to reach `READY` status before completing.                            | Default: `true`                                              |
 | `cluster_issuer_name` |          | cert-manager cluster issuer name                                                                         | Default: `letsencrypt-prod`                                  |
 | `registry.host`       |          | Package registry host. Required for private package registry authentication.                             | `ghcr.io`, `docker.io`, etc.                                 |
 | `registry.username`   |          | Username to authenticate against package registry. Required for private package registry authentication. | `user`                                                       |
