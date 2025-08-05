@@ -78,3 +78,17 @@
       retries: 10
       delay: 15
       when: (wait_for_deployment | default(true)) | bool
+      failed_when: false
+
+    - name: Show deployment status on failure
+      ansible.builtin.fail:
+        msg: |
+          Deployment failed to become ready. Current status:
+          - Ready replicas: {{ deployment_info.resources[0].status.readyReplicas | default(0) }}
+          - Desired replicas: {{ deployment_info.resources[0].spec.replicas | default(1) }}
+          - Conditions: {{ deployment_info.resources[0].status.conditions | default([]) }}
+
+          Check pod logs with: kubectl logs -n {{ app_namespace }} -l app={{ app_name }}
+      when:
+        - (wait_for_deployment | default(true)) | bool
+        - deployment_info.failed | default(false)
