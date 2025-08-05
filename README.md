@@ -15,7 +15,7 @@ The project is organized into subdirectories, each dedicated to a specific type 
 
 ## Getting Started
 
-To use the tools in this repository, clone it to your machine and refer to the getting started sections in the subdirectories README.
+Clone the repository to your machine and refer to the [Quick Links](#quick-links) section to get detailed instructions based on what you'd like to use.
 
 ## Formatting
 
