@@ -69,7 +69,7 @@
       kubernetes.core.k8s_info:
         api_version: apps/v1
         kind: Deployment
-        name: "{{ app_name }}"
+        name: "{{ app_name }}-deployment"
         namespace: "{{ app_namespace }}"
       register: deployment_info
       until:
