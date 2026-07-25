@@ -64,7 +64,7 @@
             namespace: "{{ backups_namespace }}"
           type: Opaque
           stringData:
-            recipient: "{{ backup_age_recipient }}"
+            recipient: "{{ vault_backup_age_recipient }}"
 
     - name: Creating backup scripts config map
       kubernetes.core.k8s:

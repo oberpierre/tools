@@ -19,6 +19,6 @@ vault_backup_rclone_conf: |
 # the public key only below and encrypts every backup to it. Keep the matching PRIVATE offline for restoration!
 # Create the pair once with `age-keygen -o age.key` (it prints "Public key: age1...", put that
 # value here, and keep age.key somewhere safe off the cluster).
-backup_age_recipient: age1examplerecipientreplaceme
+vault_backup_age_recipient: age1examplerecipientreplaceme
 # Encrypt the vault as follows:
 # > ansible-vault encrypt example_user_vault.yml
