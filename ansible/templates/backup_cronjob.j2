@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-{{ item.name }}
+  namespace: {{ backups_namespace }}
+  labels:
+    app: cluster-backup
+    store: {{ item.name }}
+spec:
+  schedule: "{{ item.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: cluster-backup
+            store: {{ item.name }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: {{ item.image }}
+              command: ["/bin/sh", "/scripts/{{ item.script }}"]
+              env:
+                - name: RCLONE_CONFIG
+                  value: /secrets/rclone/rclone.conf
+                - name: RCLONE_REMOTE
+                  value: "{{ backup_remote }}"
+                - name: KEEP_LAST
+                  value: "{{ backup_keep_last }}"
+                - name: AGE_RECIPIENT
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ backup_age_secret }}
+                      key: recipient
+                {% for e in item.env | default([]) %}
+                - name: {{ e.name }}
+                  {% if e.value is defined %}
+                  value: "{{ e.value }}"
+                  {% else %}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ e.secret }}
+                      key: {{ e.key }}
+                  {% endif %}
+                {% endfor %}
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: rclone
+                  mountPath: /secrets/rclone
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: {{ backup_scripts_configmap }}
+            - name: rclone
+              secret:
+                secretName: {{ backup_rclone_secret }}
