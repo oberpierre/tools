@@ -33,6 +33,7 @@ REMOTE="$RCLONE_REMOTE/postgres"
 NS="$PG_NAMESPACE"
 POD="$PG_POD"
 SUPERUSER="${PG_SUPERUSER:-postgres}"
+PG_CONTAINER="${PG_CONTAINER:-postgresql}"   # the DB container in the pod (vs the metrics sidecar)
 
 DB="" ARCHIVE="" TARGET="" MODE="scratch"
 while [ $# -gt 0 ]; do
@@ -63,7 +64,7 @@ dump="$tmp/$DB.pgc"
 
 # Password comes from the same secret the backup CronJob reads.
 pgpw="$(kubectl get secret postgresql-credentials -n "$NS" -o jsonpath='{.data.postgres-password}' | base64 -d)"
-kexec() { kubectl exec -i -n "$NS" "$POD" -- env PGPASSWORD="$pgpw" "$@"; }
+kexec() { kubectl exec -i -c "$PG_CONTAINER" -n "$NS" "$POD" -- env PGPASSWORD="$pgpw" "$@"; }
 
 case "$MODE" in
   live)    target="$DB" ;;
@@ -80,7 +81,7 @@ fi
 # `kubectl exec -i` stdin: streaming a binary archive over the exec channel can hang (stdin EOF
 # is not reliably propagated), and a real file also lets pg_restore seek.
 echo "copying dump into the pod"
-kubectl cp "$dump" "$NS/$POD:/tmp/restore-$$.pgc" -c postgresql
+kubectl cp "$dump" "$NS/$POD:/tmp/restore-$$.pgc" -c "$PG_CONTAINER"
 
 echo "pg_restore -> '$target'"
 kexec pg_restore -U "$SUPERUSER" -d "$target" --no-owner --clean --if-exists "/tmp/restore-$$.pgc" || true
