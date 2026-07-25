@@ -76,8 +76,15 @@ if [ "$MODE" != "live" ] && [ "$MODE" != "target" ]; then
   kexec createdb -U "$SUPERUSER" "$target"
 fi
 
+# Copy the dump into the pod and restore from that file rather than piping it into
+# `kubectl exec -i` stdin: streaming a binary archive over the exec channel can hang (stdin EOF
+# is not reliably propagated), and a real file also lets pg_restore seek.
+echo "copying dump into the pod"
+kubectl cp "$dump" "$NS/$POD:/tmp/restore-$$.pgc" -c postgresql
+
 echo "pg_restore -> '$target'"
-kexec pg_restore -U "$SUPERUSER" -d "$target" --no-owner --clean --if-exists <"$dump" || true
+kexec pg_restore -U "$SUPERUSER" -d "$target" --no-owner --clean --if-exists "/tmp/restore-$$.pgc" || true
+kexec rm -f "/tmp/restore-$$.pgc" || true
 
 echo "verification (per-table live tuple estimates):"
 kexec psql -U "$SUPERUSER" -d "$target" -c \
