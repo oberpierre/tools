@@ -26,6 +26,20 @@
           - name: PGPASSWORD
             secret: postgresql-credentials
             key: postgres-password
+      - name: clickhouse
+        image: alpine:3.20
+        script: backup_clickhouse.sh
+        schedule: "0 3 * * *"
+        env:
+          - name: CH_URL
+            value: http://clickhouse.data-services.svc.cluster.local:8123
+          - name: CH_USER
+            value: "{{ vault_clickhouse_user }}"
+          - name: CH_DB
+            value: plausible_events_db
+          - name: CH_PASSWORD
+            secret: clickhouse-credentials
+            key: admin-password
   vars_files:
     - vars/example_user_vault.yml
 
@@ -77,6 +91,7 @@
             namespace: "{{ backups_namespace }}"
           data:
             backup_postgres.sh: "{{ lookup('ansible.builtin.file', 'files/backup_postgres.sh') }}"
+            backup_clickhouse.sh: "{{ lookup('ansible.builtin.file', 'files/backup_clickhouse.sh') }}"
 
     - name: Creating backup manifest directory
       ansible.builtin.file:
