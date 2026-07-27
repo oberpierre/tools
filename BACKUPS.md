@@ -89,12 +89,22 @@ Both restore scripts default to **scratch mode**: they restore into a throwaway 
 
 ### Postgres - [`scripts/restore_postgres.sh`](scripts/restore_postgres.sh)
 
-Env: `RCLONE_REMOTE`, `AGE_IDENTITY`, `PG_NAMESPACE`, `PG_POD` (optional `PG_SUPERUSER` = `postgres`, `PG_CONTAINER` = `postgresql`). `--db` selects which `<db>.pgc` inside the archive to restore.
+Env: `RCLONE_REMOTE`, `AGE_IDENTITY`, `PG_NAMESPACE`, `PG_POD` (optional `PG_SUPERUSER` = `postgres`, `PG_CONTAINER` = `postgresql`).
+
+`--db` restores a single database (its `<db>.pgc` inside the archive), scratch by default:
 
 ```bash
 RCLONE_REMOTE=gdrive:cluster-backups AGE_IDENTITY={{ path_to_age_key }} \
 PG_NAMESPACE=data-services PG_POD=postgresql-0 \
   scripts/restore_postgres.sh --db {{ database }}
+```
+
+`--all` restores the **whole postgres instance**, roles/grants then every database into its original name, onto the pod `PG_POD` points at. This is the disaster-recovery path: point it at a freshly redeployed Postgres, or at a side instance to verify the entire archive at once. Roles are restored first so object ownership comes back faithfully.
+
+```bash
+RCLONE_REMOTE=gdrive:cluster-backups AGE_IDENTITY={{ path_to_age_key }} \
+PG_NAMESPACE=data-services PG_POD=postgresql-0 \
+  scripts/restore_postgres.sh --all
 ```
 
 ### ClickHouse - [`scripts/restore_clickhouse.sh`](scripts/restore_clickhouse.sh)

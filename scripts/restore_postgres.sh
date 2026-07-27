@@ -4,18 +4,23 @@
 # Runs on the operator's machine (needs kubectl, rclone and age
 # (github.com/FiloSottile/age) with the OFFLINE age identity/private key). It
 # pulls an encrypted archive from the rclone remote, decrypts it, and restores
-# one database BACK ONTO THE CLUSTER by streaming it through `kubectl exec …
-# pg_restore` into the target Postgres pod. By default it restores into a
-# throwaway database and prints per-table row counts, so a backup is proven
-# restorable before it is ever trusted or promoted to live.
+# databases BACK ONTO THE CLUSTER via `kubectl cp` + pg_restore into the target
+# Postgres pod. With --db it restores a single database (into a throwaway DB by
+# default, printing per-table row counts so a backup is proven restorable before
+# it is trusted). With --all it restores the whole cluster (roles/grants + every
+# database) into their original names, for disaster recovery into a fresh pod.
 #
 # Usage:
 #   restore_postgres.sh --db <name> [--archive NAME] [--target DB | --live]
-#     --db       database to restore (its <db>.pgc inside the archive)
+#   restore_postgres.sh --all [--archive NAME]
+#     --db       restore one database (its <db>.pgc inside the archive)
+#     --all      restore roles/grants + every database into their original names,
+#                onto the pod PG_POD points at (a fresh instance for DR, or a side
+#                instance to verify the whole archive at once)
 #     --archive  archive object name (default: newest in the remote)
-#     --target   restore into this existing database
-#     --live     restore into the original --db (DANGER: overwrites live data)
-#   default:     restore into a scratch DB, verify, then drop it
+#     --target   restore --db into this existing database
+#     --live     restore --db into its original name (DANGER: overwrites live data)
+#   default (with --db): restore into a scratch DB, verify, then drop it
 #
 # Required env (no defaults = fail loudly rather than guess the wrong target):
 #   RCLONE_REMOTE  rclone remote root, e.g. gdrive:cluster-backups
@@ -39,13 +44,18 @@ DB="" ARCHIVE="" TARGET="" MODE="scratch"
 while [ $# -gt 0 ]; do
   case "$1" in
     --db) DB="$2"; shift 2 ;;
+    --all) MODE="all"; shift ;;
     --archive) ARCHIVE="$2"; shift 2 ;;
     --target) TARGET="$2"; MODE="target"; shift 2 ;;
     --live) MODE="live"; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$DB" ] || { echo "error: --db is required" >&2; exit 2; }
+if [ "$MODE" = "all" ]; then
+  [ -z "$DB" ] || { echo "error: --db and --all are mutually exclusive" >&2; exit 2; }
+else
+  [ -n "$DB" ] || { echo "error: --db or --all is required" >&2; exit 2; }
+fi
 [ -f "$AGE_IDENTITY" ] || { echo "error: age identity not found: $AGE_IDENTITY" >&2; exit 2; }
 
 tmp="$(mktemp -d)"
@@ -55,16 +65,58 @@ if [ -z "$ARCHIVE" ]; then
   ARCHIVE="$(rclone lsf "$REMOTE/" | sort | tail -1)"
   [ -n "$ARCHIVE" ] || { echo "error: no archives found in $REMOTE" >&2; exit 1; }
 fi
-echo "restoring database '$DB' from $REMOTE/$ARCHIVE"
-
+echo "using archive $REMOTE/$ARCHIVE"
 rclone copy "$REMOTE/$ARCHIVE" "$tmp/"
 age -d -i "$AGE_IDENTITY" "$tmp/$ARCHIVE" | tar -C "$tmp" -xzf -
-dump="$tmp/$DB.pgc"
-[ -f "$dump" ] || { echo "error: $DB.pgc not in archive (has: $(ls "$tmp" | tr '\n' ' '))" >&2; exit 1; }
 
 # Password comes from the same secret the backup CronJob reads.
 pgpw="$(kubectl get secret postgresql-credentials -n "$NS" -o jsonpath='{.data.postgres-password}' | base64 -d)"
 kexec() { kubectl exec -i -c "$PG_CONTAINER" -n "$NS" "$POD" -- env PGPASSWORD="$pgpw" "$@"; }
+
+# Dumps are `kubectl cp`-ed into the pod and restored from that file rather than piped into
+# `kubectl exec -i` stdin: streaming a binary archive over the exec channel can hang (stdin EOF
+# is not reliably propagated), and a real file also lets pg_restore seek.
+# pg_restore does not stop on error by default (no --exit-on-error): it restores everything it can,
+# skips only the items that error, and exits non-zero to report that some errors were ignored. Those
+# are usually benign (an ignorable COMMENT, a grant to a role that predates the dump), and the rest
+# of the restore still happened, so we surface each as a WARNING but do NOT fail the run over it; you
+# can re-run '--db <name>' for any database that needs a clean retry.
+fail=0
+if [ "$MODE" = "all" ]; then
+  [ -f "$tmp/globals.sql" ] || { echo "error: globals.sql not in archive" >&2; exit 1; }
+  echo "restoring roles/grants + every database into $NS/$POD (original names)"
+  # Roles/grants first, so object ownership restores faithfully. Some roles (e.g. the Bitnami
+  # defaults) may already exist; psql prints those errors but keeps going and exits 0 (no
+  # ON_ERROR_STOP), so a non-zero exit here is a real failure that set -e should stop on.
+  kubectl cp "$tmp/globals.sql" "$NS/$POD:/tmp/globals-$$.sql" -c "$PG_CONTAINER"
+  kexec psql -U "$SUPERUSER" -d postgres -f "/tmp/globals-$$.sql"
+  kexec rm -f "/tmp/globals-$$.sql" || true
+
+  for dump in "$tmp"/*.pgc; do
+    [ -e "$dump" ] || continue
+    db="$(basename "$dump" .pgc)"
+    echo "restoring database '$db'"
+    kexec createdb -U "$SUPERUSER" "$db" 2>/dev/null || true   # may already exist
+    kubectl cp "$dump" "$NS/$POD:/tmp/restore-$$.pgc" -c "$PG_CONTAINER"
+    if ! kexec pg_restore -U "$SUPERUSER" -d "$db" --clean --if-exists "/tmp/restore-$$.pgc"; then
+      echo "WARNING: pg_restore reported errors for database '$db' (review the output above)" >&2
+      fail=$((fail + 1))
+    fi
+    kexec rm -f "/tmp/restore-$$.pgc" || true
+  done
+
+  echo "verification (databases present):"
+  kexec psql -U "$SUPERUSER" -d postgres -c "\l"
+  if [ "$fail" -gt 0 ]; then
+    echo "note: $fail database(s) reported restore errors above; review them and re-run '--db <name>' if needed" >&2
+  fi
+  echo "done"
+  exit 0
+fi
+
+# --- single database (--db) ---
+dump="$tmp/$DB.pgc"
+[ -f "$dump" ] || { echo "error: $DB.pgc not in archive (has: $(ls "$tmp" | tr '\n' ' '))" >&2; exit 1; }
 
 case "$MODE" in
   live)    target="$DB" ;;
@@ -77,14 +129,13 @@ if [ "$MODE" != "live" ] && [ "$MODE" != "target" ]; then
   kexec createdb -U "$SUPERUSER" "$target"
 fi
 
-# Copy the dump into the pod and restore from that file rather than piping it into
-# `kubectl exec -i` stdin: streaming a binary archive over the exec channel can hang (stdin EOF
-# is not reliably propagated), and a real file also lets pg_restore seek.
 echo "copying dump into the pod"
 kubectl cp "$dump" "$NS/$POD:/tmp/restore-$$.pgc" -c "$PG_CONTAINER"
 
 echo "pg_restore -> '$target'"
-kexec pg_restore -U "$SUPERUSER" -d "$target" --no-owner --clean --if-exists "/tmp/restore-$$.pgc" || true
+if ! kexec pg_restore -U "$SUPERUSER" -d "$target" --no-owner --clean --if-exists "/tmp/restore-$$.pgc"; then
+  echo "WARNING: pg_restore reported errors (review the output above); the row counts below show what actually restored" >&2
+fi
 kexec rm -f "/tmp/restore-$$.pgc" || true
 
 echo "verification (per-table live tuple estimates):"
