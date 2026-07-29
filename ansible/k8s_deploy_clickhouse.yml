@@ -4,6 +4,9 @@
   vars:
     clickhouse_namespace: data-services
     clickhouse_secret_name: clickhouse-credentials
+    # ClickHouse shard count. 1 suits a single node; multi-node clusters can raise it to spread
+    # data (the backup dumps via the clickhouse Service, so >1 shard needs a shard-aware backup).
+    clickhouse_shards: 1
   vars_files:
     - vars/example_user_vault.yml
 
@@ -42,6 +45,7 @@
         release_namespace: "{{ clickhouse_namespace }}"
         state: present
         values:
+          shards: "{{ clickhouse_shards }}"
           replicaCount: 1
           auth:
             username: "{{ vault_clickhouse_user }}"
