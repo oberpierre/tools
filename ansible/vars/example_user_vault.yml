@@ -20,5 +20,10 @@ vault_backup_rclone_conf: |
 # Create the pair once with `age-keygen -o age.key` (it prints "Public key: age1...", put that
 # value here, and keep age.key somewhere safe off the cluster).
 vault_backup_age_recipient: age1examplerecipientreplaceme
+# Telegram alerting: Alertmanager delivers backup alerts to a Telegram chat.
+# Create a bot with @BotFather (it gives you the token); get your numeric chat id by messaging the
+# bot then reading https://api.telegram.org/bot<token>/getUpdates, or by asking @userinfobot.
+vault_telegram_bot_token: "123456789:REPLACE_WITH_YOUR_BOTFATHER_TOKEN"
+vault_telegram_chat_id: 123456789
 # Encrypt the vault as follows:
 # > ansible-vault encrypt example_user_vault.yml
