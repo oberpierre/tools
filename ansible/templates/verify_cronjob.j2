@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-verify-{{ item.name }}
+  namespace: {{ backups_namespace }}
+  labels:
+    app: backup-verify
+    store: {{ item.name }}
+spec:
+  schedule: "{{ item.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: backup-verify
+            store: {{ item.name }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ verify_service_account }}
+          containers:
+            - name: verify
+              image: {{ item.image }}
+              command: ["/bin/sh", "/verify/verify_backup.sh"]
+              env:
+                - name: STORE
+                  value: "{{ item.name }}"
+                - name: PUSHGATEWAY_URL
+                  value: "{{ pushgateway_url }}"
+                - name: SCRIPTS_DIR
+                  value: /scripts
+                - name: VERIFY_DIR
+                  value: /verify
+                {% for e in item.env | default([]) %}
+                - name: {{ e.name }}
+                  {% if e.value is defined %}
+                  value: "{{ e.value }}"
+                  {% else %}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ e.secret }}
+                      key: {{ e.key }}
+                  {% endif %}
+                {% endfor %}
+              volumeMounts:
+                - name: backup-scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: verify-scripts
+                  mountPath: /verify
+                  readOnly: true
+          volumes:
+            # The exact backup scripts the nightly CronJobs run, so this verifies the deployed artifact.
+            - name: backup-scripts
+              configMap:
+                name: {{ backup_scripts_configmap }}
+            - name: verify-scripts
+              configMap:
+                name: {{ verify_scripts_configmap }}
