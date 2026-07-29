@@ -1,0 +1,72 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backup-alerts
+  namespace: monitoring
+  labels:
+    # kube-prometheus-stack's operator only picks up PrometheusRules carrying its release label
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: cluster-backups
+      rules:
+        # The verify CronJob round-trips a fresh backup into a scratch DB; success=0 means the latest
+        # attempt could not. A single failure is a warning; if it keeps failing, BackupVerifyStale
+        # escalates it to critical once the last success ages past the window.
+        - alert: BackupVerifyFailed
+          expr: backup_verify_success == 0
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.store }} backup failed restore verification"
+            description: >-
+              The latest backup-verify-{{ $labels.store }} run could not round-trip a backup into a
+              scratch database. A backup that will not restore is not a backup; check the CronJob logs.
+        # Dead-man's-switch on the verification: fires whether it is failing or simply not running,
+        # as long as no success has been recorded in over two days (it runs daily, so this tolerates
+        # one missed run). Absent series are covered by BackupVerifyMetricsMissing instead.
+        - alert: BackupVerifyStale
+          expr: time() - backup_verify_last_success_timestamp > 172800
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.store }} backup not verified restorable in over 2 days"
+            description: >-
+              backup-verify-{{ $labels.store }} has not reported a successful restore for more than
+              two days. The daily verification is not running or has been failing.
+        # Dead-man's-switch on the actual nightly off-site backup: each backup script pushes this
+        # heartbeat only on success, so a failed or skipped run lets it age out.
+        - alert: BackupStale
+          expr: time() - backup_last_success_timestamp > 172800
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No successful {{ $labels.store }} off-site backup in over 2 days"
+            description: >-
+              backup-{{ $labels.store }} has not pushed a success heartbeat for more than two days.
+              The nightly encrypted off-site backup is not running or has been failing.
+        # Catch-all for the heartbeats vanishing entirely (no job has run since Pushgateway started,
+        # or Pushgateway lost its state): the staleness rules above cannot fire on an absent series.
+        - alert: BackupMetricsMissing
+          expr: absent(backup_last_success_timestamp)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No backup heartbeats are reaching Prometheus"
+            description: >-
+              Prometheus sees no backup_last_success_timestamp series at all. Either no nightly backup
+              has run since Pushgateway last started, or the backup CronJobs or Pushgateway are broken.
+        - alert: BackupVerifyMetricsMissing
+          expr: absent(backup_verify_success)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "No backup-verification metrics are reaching Prometheus"
+            description: >-
+              Prometheus sees no backup_verify_success series at all. Either no verification has run
+              since Pushgateway last started, or the verify CronJobs or Pushgateway are broken.
