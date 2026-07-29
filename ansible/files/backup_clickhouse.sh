@@ -54,3 +54,11 @@ if [ "$surplus" -gt 0 ]; then
 fi
 
 echo "backup complete: $dest/$archive"
+
+# Heartbeat for the dead-man's-switch: record this successful run so Prometheus can alert if no
+# backup lands within the expected window. Only the success path reaches here (set -e), so a failed
+# run simply lets the timestamp go stale. No-op unless a Pushgateway URL is configured.
+if [ -n "${PUSHGATEWAY_URL:-}" ]; then
+  printf '# TYPE backup_last_success_timestamp gauge\nbackup_last_success_timestamp %s\n' "$(date +%s)" \
+    | curl -sS --max-time 30 --data-binary @- "$PUSHGATEWAY_URL/metrics/job/backup/store/clickhouse" || true
+fi
