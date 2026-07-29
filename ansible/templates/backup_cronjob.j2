@@ -32,6 +32,8 @@ spec:
                   value: "{{ backup_remote }}"
                 - name: KEEP_LAST
                   value: "{{ backup_keep_last }}"
+                - name: PUSHGATEWAY_URL
+                  value: "{{ pushgateway_url }}"
                 - name: AGE_RECIPIENT
                   valueFrom:
                     secretKeyRef:

@@ -11,6 +11,9 @@
     backup_rclone_secret: backup-rclone
     backup_age_secret: backup-age
     backup_scripts_configmap: backup-scripts
+    # Each script POSTs a backup_last_success_timestamp heartbeat here on success; a run that
+    # fails (or never happens) leaves it stale for the dead-man's-switch alert to catch.
+    pushgateway_url: http://pushgateway.monitoring.svc.cluster.local:9091
     backups:
       - name: postgres
         image: postgres:17-alpine
