@@ -71,8 +71,17 @@ trap finish EXIT
 # restore scripts exec/cp through it). Fetched at runtime so no bespoke image has to be built/pushed,
 # same choice the backup CronJobs make. KUBECTL_VERSION pins it if the auto-detected stable drifts.
 apk add --no-cache bash age rclone curl >/dev/null
-kver="${KUBECTL_VERSION:-$(curl -sSL https://dl.k8s.io/release/stable.txt)}"
-curl -sSLo "$work/kubectl" "https://dl.k8s.io/release/$kver/bin/linux/amd64/kubectl"
+# Match the node architecture instead of assuming amd64, and use --fail --retry so a transient
+# dl.k8s.io error does not save an HTML error page as "kubectl" (which would exec-fail later) or
+# abort the whole verification over one blip. (Caching kubectl into an image/volume would avoid the
+# nightly download entirely; not worth a custom image or PVC for a single-node job.)
+case "$(uname -m)" in
+  x86_64) arch=amd64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+kver="${KUBECTL_VERSION:-$(curl -fsSL --retry 3 https://dl.k8s.io/release/stable.txt)}"
+curl -fsSL --retry 3 -o "$work/kubectl" "https://dl.k8s.io/release/$kver/bin/linux/$arch/kubectl"
 chmod +x "$work/kubectl"
 
 age-keygen -o "$key" 2>/dev/null
