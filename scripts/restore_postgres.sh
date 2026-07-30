@@ -40,20 +40,27 @@ POD="$PG_POD"
 SUPERUSER="${PG_SUPERUSER:-postgres}"
 PG_CONTAINER="${PG_CONTAINER:-postgresql}"   # the DB container in the pod (vs the metrics sidecar)
 
-DB="" ARCHIVE="" TARGET="" MODE="scratch"
+DB="" ARCHIVE="" TARGET="" MODE=""
+# set_mode rejects a second mode flag rather than letting the last one silently win: with the
+# destructive --all/--live paths, `--target scratch --all` quietly ignoring --target would overwrite
+# live databases. need_arg guards value-taking flags so a trailing `--db` prints usage instead of
+# dying on an unbound $2 under set -u.
+set_mode() { [ -z "$MODE" ] || { echo "error: --all, --target and --live are mutually exclusive" >&2; exit 2; }; MODE="$1"; }
+need_arg() { [ "$#" -ge 2 ] || { echo "error: $1 requires a value" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --db) DB="$2"; shift 2 ;;
-    --all) MODE="all"; shift ;;
-    --archive) ARCHIVE="$2"; shift 2 ;;
-    --target) TARGET="$2"; MODE="target"; shift 2 ;;
-    --live) MODE="live"; shift ;;
+    --db) need_arg "$@"; DB="$2"; shift 2 ;;
+    --all) set_mode all; shift ;;
+    --archive) need_arg "$@"; ARCHIVE="$2"; shift 2 ;;
+    --target) need_arg "$@"; set_mode target; TARGET="$2"; shift 2 ;;
+    --live) set_mode live; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 if [ "$MODE" = "all" ]; then
   [ -z "$DB" ] || { echo "error: --db and --all are mutually exclusive" >&2; exit 2; }
 else
+  MODE="${MODE:-scratch}"
   [ -n "$DB" ] || { echo "error: --db or --all is required" >&2; exit 2; }
 fi
 [ -f "$AGE_IDENTITY" ] || { echo "error: age identity not found: $AGE_IDENTITY" >&2; exit 2; }

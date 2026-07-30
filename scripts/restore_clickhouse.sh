@@ -37,15 +37,21 @@ CH_CONTAINER="${CH_CONTAINER:-clickhouse}"
 CH_SECRET="${CH_SECRET:-clickhouse-credentials}"
 CH_SECRET_KEY="${CH_SECRET_KEY:-admin-password}"
 
-ARCHIVE="" TARGET="" MODE="scratch"
+ARCHIVE="" TARGET="" MODE=""
+# set_mode rejects a second mode flag rather than letting the last one silently win (--target and
+# --live differ, and --live is destructive). need_arg guards value-taking flags so a trailing
+# `--target` prints usage instead of dying on an unbound $2 under set -u.
+set_mode() { [ -z "$MODE" ] || { echo "error: --target and --live are mutually exclusive" >&2; exit 2; }; MODE="$1"; }
+need_arg() { [ "$#" -ge 2 ] || { echo "error: $1 requires a value" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --archive) ARCHIVE="$2"; shift 2 ;;
-    --target) TARGET="$2"; MODE="target"; shift 2 ;;
-    --live) MODE="live"; shift ;;
+    --archive) need_arg "$@"; ARCHIVE="$2"; shift 2 ;;
+    --target) need_arg "$@"; set_mode target; TARGET="$2"; shift 2 ;;
+    --live) set_mode live; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+MODE="${MODE:-scratch}"
 [ -f "$AGE_IDENTITY" ] || { echo "error: age identity not found: $AGE_IDENTITY" >&2; exit 2; }
 
 tmp="$(mktemp -d)"
