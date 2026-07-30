@@ -22,16 +22,22 @@ trap 'rm -rf "$work" "/tmp/postgres-$ts.tar.gz.age"' EXIT
 
 pg_dumpall -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" --globals-only >"$work/globals.sql"
 
-# 'postgres' and template DBs carry no application data worth a per-DB dump.
-psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -d postgres -Atqc \
-  "SELECT datname FROM pg_database WHERE datistemplate = false AND datname <> 'postgres'" \
-  | while IFS= read -r db; do
-      [ -n "$db" ] || continue
-      pg_dump -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -Fc "$db" >"$work/$db.pgc"
-    done
+# 'postgres' and template DBs carry no application data worth a per-DB dump. Capture the list in its
+# own assignment rather than piping `psql | while`: a pipeline hides a psql failure behind the loop's
+# zero exit, so set -e would not catch it and we would ship a globals-only "backup". As a command
+# substitution, a psql failure aborts the run here.
+dbs=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -d postgres -Atqc \
+  "SELECT datname FROM pg_database WHERE datistemplate = false AND datname <> 'postgres'")
+printf '%s\n' "$dbs" | while IFS= read -r db; do
+  [ -n "$db" ] || continue
+  pg_dump -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -Fc "$db" >"$work/$db.pgc"
+done
 
 archive="postgres-$ts.tar.gz.age"
-tar -C "$work" -czf - . | age -r "$AGE_RECIPIENT" -o "/tmp/$archive"
+# pipefail (scoped to this subshell) so a tar error is not masked by age exiting 0 on the partial
+# stream, which would upload a truncated archive that only fails at restore time. Kept local because
+# a global pipefail would also trip the retention `printf | head` below on its normal SIGPIPE.
+( set -o pipefail; tar -C "$work" -czf - . | age -r "$AGE_RECIPIENT" -o "/tmp/$archive" )
 
 dest="$RCLONE_REMOTE/postgres"
 rclone copy "/tmp/$archive" "$dest/"
