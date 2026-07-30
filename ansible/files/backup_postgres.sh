@@ -26,8 +26,11 @@ pg_dumpall -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" --globals-only >"$work
 # own assignment rather than piping `psql | while`: a pipeline hides a psql failure behind the loop's
 # zero exit, so set -e would not catch it and we would ship a globals-only "backup". As a command
 # substitution, a psql failure aborts the run here.
+# 'backup_verify%' are the transient scratch DBs the restore-verification CronJobs create; skip them
+# so an orphan (from a job killed before its cleanup) never gets rolled into a real backup.
 dbs=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -d postgres -Atqc \
-  "SELECT datname FROM pg_database WHERE datistemplate = false AND datname <> 'postgres'")
+  "SELECT datname FROM pg_database
+     WHERE datistemplate = false AND datname <> 'postgres' AND datname NOT LIKE 'backup_verify%'")
 printf '%s\n' "$dbs" | while IFS= read -r db; do
   [ -n "$db" ] || continue
   pg_dump -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -Fc "$db" >"$work/$db.pgc"

@@ -28,9 +28,13 @@ mkdir -p "$remote"
 
 ok=0
 rows=0
+source_rows=0
 pw=""
 created=0
-scratch="backup_verify_$(date -u +%Y%m%d%H%M%S)"
+# Fixed per-store name (not timestamped): concurrencyPolicy Forbid rules out overlapping runs, so a
+# stable name means a run SIGKILLed before its cleanup trap leaves at most ONE orphan, reclaimed by
+# the drop-before-create below, instead of leaking a fresh scratch DB every day.
+scratch="backup_verify_$STORE"
 
 # ClickHouse admin queries go over HTTP with the password in a header (never argv), matching the
 # backup script; used for the assertion and the scratch-DB drop. Only called on clickhouse runs.
@@ -80,24 +84,32 @@ case "$STORE" in
     PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
     PG_CONTAINER="${PG_CONTAINER:-postgresql}"
 
-    # PUSHGATEWAY_URL= so the inner backup does NOT push the real backup_last_success_timestamp
-    # heartbeat. This is a throwaway local backup; letting it refresh the heartbeat would keep
-    # BackupStale green even while the actual nightly off-site backup is failing.
+    pw="$(kubectl get secret postgresql-credentials -n "$PG_NAMESPACE" -o jsonpath='{.data.postgres-password}' | base64 -d)"
+
+    # Baseline the live source BEFORE the backup, so the assertion compares against the data the dump
+    # captured. n_live_tup is kept current on a live DB (autovacuum), so no ANALYZE is needed here.
+    source_rows="$(kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
+      env PGPASSWORD="$pw" psql -U "$PG_SUPERUSER" -d "$VERIFY_DB" -Atqc \
+      "SELECT COALESCE(sum(n_live_tup), 0) FROM pg_stat_user_tables")"
+
+    # PUSHGATEWAY_URL= so the throwaway local backup does NOT push the real backup_last_success
+    # heartbeat, which would keep BackupStale green while the actual nightly off-site backup fails.
     AGE_RECIPIENT="$recipient" RCLONE_REMOTE="$remote" KEEP_LAST=1 PUSHGATEWAY_URL= \
       sh "$SCRIPTS_DIR/backup_postgres.sh"
 
-    pw="$(kubectl get secret postgresql-credentials -n "$PG_NAMESPACE" -o jsonpath='{.data.postgres-password}' | base64 -d)"
+    # Reclaim an orphan scratch DB left by a previous SIGKILLed run, then recreate it fresh.
+    created=1
+    kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
+      env PGPASSWORD="$pw" dropdb --if-exists -U "$PG_SUPERUSER" "$scratch"
     kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
       env PGPASSWORD="$pw" createdb -U "$PG_SUPERUSER" "$scratch"
-    created=1
 
     AGE_IDENTITY="$key" RCLONE_REMOTE="$remote" \
       PG_NAMESPACE="$PG_NAMESPACE" PG_POD="$PG_POD" \
       PG_SUPERUSER="$PG_SUPERUSER" PG_CONTAINER="$PG_CONTAINER" \
       bash "$VERIFY_DIR/restore_postgres.sh" --db "$VERIFY_DB" --target "$scratch"
 
-    # ANALYZE so n_live_tup reflects the freshly loaded rows, then sum them as the authoritative
-    # "the restore produced queryable data" signal (independent of the restore script's own output).
+    # ANALYZE so n_live_tup reflects the freshly loaded rows, then sum them for the assertion below.
     kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
       env PGPASSWORD="$pw" psql -U "$PG_SUPERUSER" -d "$scratch" -c "ANALYZE" >/dev/null
     rows="$(kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
@@ -108,13 +120,18 @@ case "$STORE" in
   clickhouse)
     : "${CH_URL:?}" "${CH_USER:?}" "${CH_PASSWORD:?}" "${CH_DB:?}" "${CH_NAMESPACE:?}" "${CH_POD:?}"
 
+    # Baseline the live source before the backup (total_rows is exact for MergeTree).
+    source_rows="$(chq "SELECT sum(total_rows) FROM system.tables WHERE database = '$CH_DB'")"
+
     # PUSHGATEWAY_URL= for the same reason as the postgres call above: don't let the throwaway
     # local backup refresh the real backup heartbeat.
     AGE_RECIPIENT="$recipient" RCLONE_REMOTE="$remote" KEEP_LAST=1 PUSHGATEWAY_URL= \
       sh "$SCRIPTS_DIR/backup_clickhouse.sh"
 
-    # restore_clickhouse.sh --target CREATEs the database itself, so mark it for cleanup up front.
+    # Reclaim an orphan from a killed run before restoring: restore_clickhouse.sh --target only does
+    # CREATE DATABASE IF NOT EXISTS, so leftover tables would fail its create loop as "already exists".
     created=1
+    chq "DROP DATABASE IF EXISTS \`$scratch\`" >/dev/null
     AGE_IDENTITY="$key" RCLONE_REMOTE="$remote" \
       CH_NAMESPACE="$CH_NAMESPACE" CH_POD="$CH_POD" CH_DB="$CH_DB" CH_USER="$CH_USER" \
       bash "$VERIFY_DIR/restore_clickhouse.sh" --target "$scratch"
@@ -127,6 +144,14 @@ case "$STORE" in
 esac
 
 case "${rows:-0}" in ''|*[!0-9]*) rows=0 ;; esac
-[ "$rows" -gt 0 ] || { echo "assertion failed: restored $STORE scratch DB '$scratch' has 0 rows" >&2; exit 1; }
-echo "verify ok: $STORE round-tripped, scratch '$scratch' holds $rows rows"
+case "${source_rows:-0}" in ''|*[!0-9]*) source_rows=0 ;; esac
+# A faithful restore reproduces the source, so require the scratch DB to hold at least ~90% of the
+# live source's rows. The slack absorbs rows written between the baseline count and the backup
+# snapshot; an empty source (0 rows) restores to 0 and passes, so a brand-new deployment with no
+# traffic yet is not flagged as a failure.
+if [ "$((rows * 10))" -lt "$((source_rows * 9))" ]; then
+  echo "assertion failed: $STORE restored $rows rows but the live source holds $source_rows" >&2
+  exit 1
+fi
+echo "verify ok: $STORE round-tripped $rows rows (live source $source_rows)"
 ok=1
