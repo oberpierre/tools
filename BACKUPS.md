@@ -1,8 +1,13 @@
 # Backups & Restore
 
-The cluster's central stateful stores are backed up as **encrypted, off-site logical dumps**. Each night every store is dumped, encrypted client-side, and pushed to a remote (e.g. Google Drive). This guide is the operational runbook: how the backups work, and how to pull, restore, and verify them.
+The cluster's central stateful stores are backed up as **encrypted, off-site logical dumps**. Each night every store is dumped, encrypted client-side, and pushed to a remote (e.g. Google Drive). This guide is the operational runbook: how the backups work, how to pull and restore them, and how the cluster **continuously verifies restorability and alerts you (via Telegram)** when a backup goes missing or fails to restore.
 
-Setup is the [`k8s_setup_backups.yml`](ansible/k8s_setup_backups.yml) playbook, see the [Ansible README](ansible/README.md#usage).
+Setup spans four playbooks, applied in this order (see the [Ansible README](ansible/README.md#usage)):
+
+1. [`k8s_setup_backups.yml`](ansible/k8s_setup_backups.yml) - the nightly backup CronJobs.
+2. [`k8s_deploy_pushgateway.yml`](ansible/k8s_deploy_pushgateway.yml) - the Pushgateway metrics sink the jobs report to.
+3. [`k8s_setup_backup_verify.yml`](ansible/k8s_setup_backup_verify.yml) - the restore-verification CronJobs (reuses the backup-scripts ConfigMap from step 1).
+4. [`k8s_deploy_backup_alerts.yml`](ansible/k8s_deploy_backup_alerts.yml) - the Prometheus alert rules. Telegram delivery of those alerts is configured in [`k8s_prometheus_grafana.yml`](ansible/k8s_prometheus_grafana.yml).
 
 ## What gets backed up
 
@@ -33,13 +38,14 @@ The private key is used **only** during restoration or verification of the data,
 
 Backup settings live in [`k8s_setup_backups.yml`](ansible/k8s_setup_backups.yml):
 
-| Variable             | Purpose                                                      | Default                                        |
-| -------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| `backup_remote`      | rclone `remote:path` root; each store gets its own subfolder | `gdrive:cluster-backups`                       |
-| `backup_keep_last`   | How many of the newest archives to keep per store            | `14`                                           |
-| `backups[].schedule` | Cron schedule per store                                      | postgres: `0 2 * * *`, clickhouse: `0 3 * * *` |
+| Variable             | Purpose                                                      | Default                                                |
+| -------------------- | ------------------------------------------------------------ | ------------------------------------------------------ |
+| `backup_remote`      | rclone `remote:path` root; each store gets its own subfolder | `gdrive:cluster-backups`                               |
+| `backup_keep_last`   | How many of the newest archives to keep per store            | `14`                                                   |
+| `backups[].schedule` | Cron schedule per store                                      | postgres: `0 2 * * *`, clickhouse: `0 3 * * *`         |
+| `pushgateway_url`    | Where the backup jobs POST their success heartbeat           | `http://pushgateway.monitoring.svc.cluster.local:9091` |
 
-The rclone config and the age **public** recipient come from Vault (`vault_backup_rclone_conf`, `vault_backup_age_recipient`), see [`example_user_vault.yml`](ansible/vars/example_user_vault.yml). Re-run the `k8s_setup_backups.yml` playbook after changing any of these.
+The rclone config and the age **public** recipient come from Vault (`vault_backup_rclone_conf`, `vault_backup_age_recipient`), see [`example_user_vault.yml`](ansible/vars/example_user_vault.yml). Re-run the `k8s_setup_backups.yml` playbook after changing any of these. Telegram alert delivery uses `vault_telegram_bot_token` and `vault_telegram_chat_id` (configured in `k8s_prometheus_grafana.yml`).
 
 ## Operator prerequisites
 
@@ -122,9 +128,9 @@ The script creates the schema in dependency order automatically and re-injects t
 
 > **`--live` and ClickHouse:** `MATERIALIZED` columns that call `dictGet()` are recomputed on insert. For a faithful live restore, load the dictionaries' source tables and `SYSTEM RELOAD DICTIONARIES` before inserting the dependent tables. Scratch verification is unaffected - row counts are correct regardless.
 
-## Verify a backup
+## Verify a backup manually
 
-**A backup you haven't restored isn't a backup.** The scratch-mode restore _is_ the verification: it pulls the latest archive, restores into a throwaway database, prints per-table row counts, and drops it, proving restorability without touching live data.
+**A backup you haven't restored isn't a backup.** The scratch-mode restore _is_ the verification: it pulls the latest archive, restores into a throwaway database, prints per-table row counts, and drops it, proving restorability without touching live data. This on-demand check also runs continuously, see [Automated verification & alerting](#automated-verification--alerting) below.
 
 ```bash
 # Postgres - restore latest into a scratch DB, print row counts, drop it
@@ -138,3 +144,22 @@ CH_NAMESPACE=data-services CH_POD=clickhouse-shard0-0 CH_DB=plausible_events_db 
 CH_USER=clickhouse \
   scripts/restore_clickhouse.sh
 ```
+
+## Automated verification & alerting
+
+The manual scratch restore above also runs **continuously**, so an unrestorable backup surfaces before you need it, with nothing to watch.
+
+- **Verify CronJobs** ([`k8s_setup_backup_verify.yml`](ansible/k8s_setup_backup_verify.yml)) run the _actual_ backup and restore scripts daily, using a throwaway age key and a local rclone directory in place of the offline key and Drive: they back up the live data, restore it into a scratch DB on the live server, assert the restored row count is within ~10% of the live source (an empty source is allowed), then drop the scratch DB. This exercises the real dump/encrypt/decrypt/restore code, not a reimplementation.
+  - What it does **not** cover is the actual Drive artifact decrypted with the **offline** key, that stays a periodic manual drill (pull an archive, `age -d -i <offline key>`, restore into a scratch DB).
+- Each nightly backup POSTs a `backup_last_success_timestamp` heartbeat, and each verify run its `backup_verify_*` result, to **Pushgateway** ([`k8s_deploy_pushgateway.yml`](ansible/k8s_deploy_pushgateway.yml)), which Prometheus scrapes.
+- **Alert rules** ([`files/backup_alerts.yaml`](ansible/files/backup_alerts.yaml), applied by [`k8s_deploy_backup_alerts.yml`](ansible/k8s_deploy_backup_alerts.yml)) evaluate those metrics and route to **Telegram**:
+
+| Alert                                                 | Fires when                                                  | Severity |
+| ----------------------------------------------------- | ----------------------------------------------------------- | -------- |
+| `BackupStale`                                         | no successful off-site backup for a store in >2 days        | critical |
+| `BackupVerifyFailed`                                  | the latest restore verification failed                      | warning  |
+| `BackupVerifyFailing`                                 | verification has failed for >2 days (incl. never succeeded) | critical |
+| `BackupVerifyStale`                                   | a previously-working verification stopped for >2 days       | critical |
+| `BackupMetricsMissing` / `BackupVerifyMetricsMissing` | the heartbeats stopped reaching Prometheus entirely         | warning  |
+
+The staleness rules are **dead-man's switches**: a store that quietly stops backing up (or being verified) goes stale and alerts even though nothing actively errors. The heartbeat is pushed only on success, so a failed or skipped run simply lets the timestamp age out.
