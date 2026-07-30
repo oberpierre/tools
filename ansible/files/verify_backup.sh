@@ -80,7 +80,10 @@ case "$STORE" in
     PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
     PG_CONTAINER="${PG_CONTAINER:-postgresql}"
 
-    AGE_RECIPIENT="$recipient" RCLONE_REMOTE="$remote" KEEP_LAST=1 \
+    # PUSHGATEWAY_URL= so the inner backup does NOT push the real backup_last_success_timestamp
+    # heartbeat. This is a throwaway local backup; letting it refresh the heartbeat would keep
+    # BackupStale green even while the actual nightly off-site backup is failing.
+    AGE_RECIPIENT="$recipient" RCLONE_REMOTE="$remote" KEEP_LAST=1 PUSHGATEWAY_URL= \
       sh "$SCRIPTS_DIR/backup_postgres.sh"
 
     pw="$(kubectl get secret postgresql-credentials -n "$PG_NAMESPACE" -o jsonpath='{.data.postgres-password}' | base64 -d)"
@@ -105,7 +108,9 @@ case "$STORE" in
   clickhouse)
     : "${CH_URL:?}" "${CH_USER:?}" "${CH_PASSWORD:?}" "${CH_DB:?}" "${CH_NAMESPACE:?}" "${CH_POD:?}"
 
-    AGE_RECIPIENT="$recipient" RCLONE_REMOTE="$remote" KEEP_LAST=1 \
+    # PUSHGATEWAY_URL= for the same reason as the postgres call above: don't let the throwaway
+    # local backup refresh the real backup heartbeat.
+    AGE_RECIPIENT="$recipient" RCLONE_REMOTE="$remote" KEEP_LAST=1 PUSHGATEWAY_URL= \
       sh "$SCRIPTS_DIR/backup_clickhouse.sh"
 
     # restore_clickhouse.sh --target CREATEs the database itself, so mark it for cleanup up front.
