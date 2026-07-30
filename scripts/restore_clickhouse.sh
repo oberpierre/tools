@@ -10,6 +10,8 @@
 #
 # Usage:
 #   restore_clickhouse.sh [--archive NAME] [--target DB | --live]
+#     --target  restore into this existing database (created if absent)
+#     --live    DROP and recreate CH_DB, then restore into it (DESTRUCTIVE; asks to confirm)
 #   default:  restore into a scratch DB <CH_DB>_restore_<ts>, verify, then drop it
 #
 # Required env (no defaults = fail loudly rather than guess the wrong target):
@@ -99,7 +101,22 @@ kubectl exec -c "$CH_CONTAINER" -n "$NS" "$POD" -- chmod 600 "$cfg_pod"
 chq() { kubectl exec -i -c "$CH_CONTAINER" -n "$NS" "$POD" -- \
   clickhouse-client --config-file "$cfg_pod" "$@"; }
 
-[ "$MODE" = "live" ] || chq --query "CREATE DATABASE IF NOT EXISTS \`$target\`"
+case "$MODE" in
+  live)
+    # "overwrite the original": drop and recreate so the bare `CREATE TABLE` DDL from SHOW CREATE
+    # (no IF NOT EXISTS, and nothing drops the live objects) does not fail every object as "already
+    # exists". This DESTROYS the current contents of the database, which is the point of --live.
+    echo "WARNING: --live will DROP DATABASE \`$target\` on $NS/$POD and rebuild it from the backup." >&2
+    printf 'Type the database name (%s) to confirm: ' "$target" >&2
+    read -r confirm
+    [ "$confirm" = "$target" ] || { echo "aborted" >&2; exit 1; }
+    chq --query "DROP DATABASE IF EXISTS \`$target\`"
+    chq --query "CREATE DATABASE \`$target\`"
+    ;;
+  *)
+    chq --query "CREATE DATABASE IF NOT EXISTS \`$target\`"
+    ;;
+esac
 echo "restoring into database '$target'"
 
 # SHOW CREATE emits the source DB name; repoint it at the target (plain global replace,
