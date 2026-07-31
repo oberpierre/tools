@@ -69,8 +69,10 @@ fi
 
 tmp="$(mktemp -d)"
 pgpass_pod=""   # in-pod .pgpass path; set once written, removed on exit
+scratch_db=""   # scratch DB to drop on exit; set once created, so a mid-restore failure cleans up too
 cleanup() {
   rm -rf "$tmp"
+  [ -n "$scratch_db" ] && kexec dropdb --if-exists -U "$SUPERUSER" "$scratch_db" >/dev/null 2>&1 || true
   [ -n "$pgpass_pod" ] && kubectl exec -c "$PG_CONTAINER" -n "$NS" "$POD" -- \
     rm -f "$pgpass_pod" >/dev/null 2>&1 || true
 }
@@ -148,9 +150,10 @@ case "$MODE" in
   scratch) target="${DB}_restore_$(date -u +%Y%m%d%H%M%S)" ;;
 esac
 
-if [ "$MODE" != "live" ] && [ "$MODE" != "target" ]; then
+if [ "$MODE" = "scratch" ]; then
   echo "creating scratch database '$target'"
   kexec createdb -U "$SUPERUSER" "$target"
+  scratch_db="$target"
 fi
 
 echo "copying dump into the pod"
@@ -166,8 +169,4 @@ echo "verification (per-table live tuple estimates):"
 kexec psql -U "$SUPERUSER" -d "$target" -c \
   "SELECT schemaname, relname, n_live_tup FROM pg_stat_user_tables ORDER BY 1, 2;"
 
-if [ "$MODE" = "scratch" ]; then
-  echo "dropping scratch database '$target'"
-  kexec dropdb -U "$SUPERUSER" "$target"
-fi
-echo "done"
+echo "done"   # a scratch DB is dropped by cleanup() on exit, including after a failed restore

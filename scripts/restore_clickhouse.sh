@@ -57,8 +57,10 @@ MODE="${MODE:-scratch}"
 
 tmp="$(mktemp -d)"
 cfg_pod=""   # in-pod client-config path; set once written, removed by cleanup
+scratch_db=""   # scratch DB to drop on exit; set once created, so a mid-restore failure cleans up too
 cleanup() {
   rm -rf "$tmp"
+  [ -n "$scratch_db" ] && chq --query "DROP DATABASE IF EXISTS \`$scratch_db\`" >/dev/null 2>&1 || true
   [ -n "$cfg_pod" ] && kubectl exec -c "$CH_CONTAINER" -n "$NS" "$POD" -- \
     rm -f "$cfg_pod" >/dev/null 2>&1 || true
 }
@@ -115,6 +117,7 @@ case "$MODE" in
     chq --query "CREATE DATABASE IF NOT EXISTS \`$target\`"
     ;;
 esac
+if [ "$MODE" = "scratch" ]; then scratch_db="$target"; fi
 echo "restoring into database '$target'"
 
 # SHOW CREATE emits the source DB name; repoint it at the target (plain global replace,
@@ -180,8 +183,4 @@ done <"$tmp/tables.tsv"
 echo "verification (row counts):"
 chq --query "SELECT name, total_rows FROM system.tables WHERE database = '$target' ORDER BY name FORMAT PrettyCompact"
 
-if [ "$MODE" = "scratch" ]; then
-  echo "dropping scratch database '$target'"
-  chq --query "DROP DATABASE \`$target\`"
-fi
-echo "done"
+echo "done"   # a scratch DB is dropped by cleanup() on exit, including after a failed restore
