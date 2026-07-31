@@ -126,8 +126,12 @@ case "$STORE" in
   clickhouse)
     : "${CH_URL:?}" "${CH_USER:?}" "${CH_PASSWORD:?}" "${CH_DB:?}" "${CH_NAMESPACE:?}" "${CH_POD:?}"
 
-    # Baseline the live source before the backup (total_rows is exact for MergeTree).
-    source_rows="$(chq "SELECT sum(total_rows) FROM system.tables WHERE database = '$CH_DB'")"
+    # Count rows only over the tables the backup actually dumps (the data-bearing ones). A loaded
+    # dictionary reports its element count in total_rows, and .inner MV tables hold rows too, but the
+    # dump skips both as schema-only; including them here would make the live source out-count the
+    # restored scratch and fail the assertion on a good backup. Baseline before the backup runs.
+    ch_row_filter="name NOT LIKE '.inner%' AND engine NOT LIKE '%View' AND engine != 'Dictionary'"
+    source_rows="$(chq "SELECT sum(total_rows) FROM system.tables WHERE database = '$CH_DB' AND $ch_row_filter")"
 
     # PUSHGATEWAY_URL= for the same reason as the postgres call above: don't let the throwaway
     # local backup refresh the real backup heartbeat.
@@ -142,8 +146,8 @@ case "$STORE" in
       CH_NAMESPACE="$CH_NAMESPACE" CH_POD="$CH_POD" CH_DB="$CH_DB" CH_USER="$CH_USER" \
       bash "$VERIFY_DIR/restore_clickhouse.sh" --target "$scratch"
 
-    # total_rows in system.tables is exact for MergeTree; dictionaries/views report NULL and drop out.
-    rows="$(chq "SELECT sum(total_rows) FROM system.tables WHERE database = '$scratch'")"
+    # Same filter as the source baseline so the two totals cover the identical set of tables.
+    rows="$(chq "SELECT sum(total_rows) FROM system.tables WHERE database = '$scratch' AND $ch_row_filter")"
     ;;
 
   *) echo "unknown STORE: $STORE" >&2; exit 2 ;;
