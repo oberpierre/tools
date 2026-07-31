@@ -27,7 +27,9 @@
 #   AGE_IDENTITY   path to your offline age identity (private key) file
 #   PG_NAMESPACE   namespace of the target Postgres, e.g. data-services
 #   PG_POD         target Postgres pod, e.g. postgresql-0
-# Optional: PG_SUPERUSER (default: postgres, the Bitnami superuser).
+# Optional: PG_SUPERUSER (default postgres, the Bitnami superuser), PG_CONTAINER (default
+#   postgresql), PG_SECRET / PG_SECRET_KEY (default postgresql-credentials / postgres-password)
+#   to read the superuser password from a differently-named secret on a DR or side instance.
 set -euo pipefail
 
 : "${RCLONE_REMOTE:?set the rclone remote root, e.g. gdrive:cluster-backups}"
@@ -39,6 +41,8 @@ NS="$PG_NAMESPACE"
 POD="$PG_POD"
 SUPERUSER="${PG_SUPERUSER:-postgres}"
 PG_CONTAINER="${PG_CONTAINER:-postgresql}"   # the DB container in the pod (vs the metrics sidecar)
+PG_SECRET="${PG_SECRET:-postgresql-credentials}"
+PG_SECRET_KEY="${PG_SECRET_KEY:-postgres-password}"
 
 DB="" ARCHIVE="" TARGET="" MODE=""
 # Reject a second mode flag instead of letting the last silently win: on the destructive --all/--live
@@ -74,8 +78,8 @@ echo "using archive $REMOTE/$ARCHIVE"
 rclone copy "$REMOTE/$ARCHIVE" "$tmp/"
 age -d -i "$AGE_IDENTITY" "$tmp/$ARCHIVE" | tar -C "$tmp" -xzf -
 
-# Password comes from the same secret the backup CronJob reads.
-pgpw="$(kubectl get secret postgresql-credentials -n "$NS" -o jsonpath='{.data.postgres-password}' | base64 -d)"
+# Password comes from the same secret the backup CronJob reads (overridable for a DR instance).
+pgpw="$(kubectl get secret "$PG_SECRET" -n "$NS" -o jsonpath="{.data.$PG_SECRET_KEY}" | base64 -d)"
 kexec() { kubectl exec -i -c "$PG_CONTAINER" -n "$NS" "$POD" -- env PGPASSWORD="$pgpw" "$@"; }
 
 # Dumps are `kubectl cp`-ed into the pod and restored from that file rather than piped into

@@ -95,7 +95,7 @@ Both restore scripts default to **scratch mode**: they restore into a throwaway 
 
 ### Postgres - [`scripts/restore_postgres.sh`](scripts/restore_postgres.sh)
 
-Env: `RCLONE_REMOTE`, `AGE_IDENTITY`, `PG_NAMESPACE`, `PG_POD` (optional `PG_SUPERUSER` = `postgres`, `PG_CONTAINER` = `postgresql`).
+Env: `RCLONE_REMOTE`, `AGE_IDENTITY`, `PG_NAMESPACE`, `PG_POD` (optional `PG_SUPERUSER` = `postgres`, `PG_CONTAINER` = `postgresql`, `PG_SECRET` = `postgresql-credentials`, `PG_SECRET_KEY` = `postgres-password`).
 
 `--db` restores a single database (its `<db>.pgc` inside the archive), scratch by default:
 
