@@ -78,7 +78,11 @@ case "$(uname -m)" in
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 kver="${KUBECTL_VERSION:-$(curl -fsSL --retry 3 https://dl.k8s.io/release/stable.txt)}"
-curl -fsSL --retry 3 -o "$work/kubectl" "https://dl.k8s.io/release/$kver/bin/linux/$arch/kubectl"
+kbase="https://dl.k8s.io/release/$kver/bin/linux/$arch"
+curl -fsSL --retry 3 -o "$work/kubectl" "$kbase/kubectl"
+# Check the download against its published checksum before running it with this job's exec and
+# secret-read rights, so a corrupted or truncated (but HTTP-200) body fails loudly instead.
+echo "$(curl -fsSL --retry 3 "$kbase/kubectl.sha256")  $work/kubectl" | sha256sum -c - >/dev/null
 chmod +x "$work/kubectl"
 
 age-keygen -o "$key" 2>/dev/null
