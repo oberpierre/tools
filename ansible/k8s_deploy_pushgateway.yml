@@ -21,8 +21,12 @@
           fullnameOverride: pushgateway
           serviceMonitor:
             enabled: true
-          # Persisted to a small volume for series to be persistent across restarts, including last-success
-          # timestamps on which we may alert (staleness / dead-man's-switch)
+          # Persist metrics so backup heartbeats survive a reschedule, which the staleness /
+          # dead-man's-switch alerts depend on. The PVC alone is inert: Pushgateway keeps series in
+          # memory unless --persistence.file points at the mount (default mountPath is /data).
+          extraArgs:
+            - --persistence.file=/data/pushgateway.data
+            - --persistence.interval=1m
           persistentVolume:
             enabled: true
             size: 1Gi
