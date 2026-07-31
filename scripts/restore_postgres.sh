@@ -68,7 +68,13 @@ fi
 [ -f "$AGE_IDENTITY" ] || { echo "error: age identity not found: $AGE_IDENTITY" >&2; exit 2; }
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+pgpass_pod=""   # in-pod .pgpass path; set once written, removed on exit
+cleanup() {
+  rm -rf "$tmp"
+  [ -n "$pgpass_pod" ] && kubectl exec -c "$PG_CONTAINER" -n "$NS" "$POD" -- \
+    rm -f "$pgpass_pod" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
 if [ -z "$ARCHIVE" ]; then
   ARCHIVE="$(rclone lsf "$REMOTE/" | sort | tail -1)"
@@ -80,7 +86,16 @@ age -d -i "$AGE_IDENTITY" "$tmp/$ARCHIVE" | tar -C "$tmp" -xzf -
 
 # Password comes from the same secret the backup CronJob reads (overridable for a DR instance).
 pgpw="$(kubectl get secret "$PG_SECRET" -n "$NS" -o jsonpath="{.data.$PG_SECRET_KEY}" | base64 -d)"
-kexec() { kubectl exec -i -c "$PG_CONTAINER" -n "$NS" "$POD" -- env PGPASSWORD="$pgpw" "$@"; }
+
+# Put the password in a .pgpass copied into the pod (chmod 600) rather than on the exec argv, so it
+# never appears in the exec request or in `ps`. A *:*:*:*:PW line matches any connection; the : and
+# \ that .pgpass treats specially are escaped.
+pgpass_pod="/tmp/pgpass-$$"
+printf '*:*:*:*:%s\n' "$(printf '%s' "$pgpw" | sed 's/[\\:]/\\&/g')" >"$tmp/pgpass"
+chmod 600 "$tmp/pgpass"
+kubectl cp "$tmp/pgpass" "$NS/$POD:$pgpass_pod" -c "$PG_CONTAINER"
+kubectl exec -c "$PG_CONTAINER" -n "$NS" "$POD" -- chmod 600 "$pgpass_pod"
+kexec() { kubectl exec -i -c "$PG_CONTAINER" -n "$NS" "$POD" -- env PGPASSFILE="$pgpass_pod" "$@"; }
 
 # Dumps are `kubectl cp`-ed into the pod and restored from that file rather than piped into
 # `kubectl exec -i` stdin: streaming a binary archive over the exec channel can hang (stdin EOF

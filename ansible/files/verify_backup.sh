@@ -30,6 +30,7 @@ ok=0
 rows=0
 source_rows=0
 pw=""
+pgpass_pod=""   # in-pod .pgpass path (postgres runs only); set once written, removed by finish
 created=0
 # Fixed name (concurrencyPolicy Forbid rules out overlap) so a killed run leaves at most one orphan,
 # reclaimed by the drop-before-create below, rather than a new scratch DB every day.
@@ -49,10 +50,12 @@ finish() {
   if [ "$created" = 1 ]; then
     case "$STORE" in
       postgres) kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
-        env PGPASSWORD="${pw:-}" dropdb --if-exists -U "$PG_SUPERUSER" "$scratch" >/dev/null 2>&1 || true ;;
+        env PGPASSFILE="${pgpass_pod:-}" dropdb --if-exists -U "$PG_SUPERUSER" "$scratch" >/dev/null 2>&1 || true ;;
       clickhouse) chq "DROP DATABASE IF EXISTS \`$scratch\`" >/dev/null 2>&1 || true ;;
     esac
   fi
+  [ -n "$pgpass_pod" ] && kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
+    rm -f "$pgpass_pod" >/dev/null 2>&1 || true
   now="$(date +%s)"
   if [ "$ok" = 1 ]; then
     printf '# TYPE backup_verify_success gauge\nbackup_verify_success 1\n# TYPE backup_verify_last_success_timestamp gauge\nbackup_verify_last_success_timestamp %s\n# TYPE backup_verify_rows gauge\nbackup_verify_rows %s\n' \
@@ -96,10 +99,19 @@ case "$STORE" in
 
     pw="$(kubectl get secret postgresql-credentials -n "$PG_NAMESPACE" -o jsonpath='{.data.postgres-password}' | base64 -d)"
 
+    # Put the password in a .pgpass copied into the pod (chmod 600) rather than on the exec argv, so
+    # it never appears in the exec request or in `ps`. A *:*:*:*:PW line matches any connection; the
+    # : and \ that .pgpass treats specially are escaped.
+    pgpass_pod="/tmp/pgpass-verify-$$"
+    printf '*:*:*:*:%s\n' "$(printf '%s' "$pw" | sed 's/[\\:]/\\&/g')" >"$work/pgpass"
+    chmod 600 "$work/pgpass"
+    kubectl cp "$work/pgpass" "$PG_NAMESPACE/$PG_POD:$pgpass_pod" -c "$PG_CONTAINER"
+    kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- chmod 600 "$pgpass_pod"
+
     # Baseline the live source BEFORE the backup, so the assertion compares against the data the dump
     # captured. n_live_tup is kept current on a live DB (autovacuum), so no ANALYZE is needed here.
     source_rows="$(kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
-      env PGPASSWORD="$pw" psql -U "$PG_SUPERUSER" -d "$VERIFY_DB" -Atqc \
+      env PGPASSFILE="$pgpass_pod" psql -U "$PG_SUPERUSER" -d "$VERIFY_DB" -Atqc \
       "SELECT COALESCE(sum(n_live_tup), 0) FROM pg_stat_user_tables")"
 
     # PUSHGATEWAY_URL= so the throwaway local backup does NOT push the real backup_last_success
@@ -110,9 +122,9 @@ case "$STORE" in
     # Reclaim an orphan scratch DB left by a previous SIGKILLed run, then recreate it fresh.
     created=1
     kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
-      env PGPASSWORD="$pw" dropdb --if-exists -U "$PG_SUPERUSER" "$scratch"
+      env PGPASSFILE="$pgpass_pod" dropdb --if-exists -U "$PG_SUPERUSER" "$scratch"
     kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
-      env PGPASSWORD="$pw" createdb -U "$PG_SUPERUSER" "$scratch"
+      env PGPASSFILE="$pgpass_pod" createdb -U "$PG_SUPERUSER" "$scratch"
 
     AGE_IDENTITY="$key" RCLONE_REMOTE="$remote" \
       PG_NAMESPACE="$PG_NAMESPACE" PG_POD="$PG_POD" \
@@ -121,9 +133,9 @@ case "$STORE" in
 
     # ANALYZE so n_live_tup reflects the freshly loaded rows, then sum them for the assertion below.
     kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
-      env PGPASSWORD="$pw" psql -U "$PG_SUPERUSER" -d "$scratch" -c "ANALYZE" >/dev/null
+      env PGPASSFILE="$pgpass_pod" psql -U "$PG_SUPERUSER" -d "$scratch" -c "ANALYZE" >/dev/null
     rows="$(kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
-      env PGPASSWORD="$pw" psql -U "$PG_SUPERUSER" -d "$scratch" -Atqc \
+      env PGPASSFILE="$pgpass_pod" psql -U "$PG_SUPERUSER" -d "$scratch" -Atqc \
       "SELECT COALESCE(sum(n_live_tup), 0) FROM pg_stat_user_tables")"
     ;;
 
