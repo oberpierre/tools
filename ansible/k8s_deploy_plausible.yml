@@ -61,9 +61,15 @@
         namespace: "{{ postgresql_namespace }}"
         pod: postgresql-0
         container: postgresql # target the DB container explicitly, not the metrics sidecar
+        # createdb as the postgres superuser (it always has CREATEDB) but hand ownership to the app
+        # user, so Plausible - which connects as that user - can create its tables. On a fresh
+        # instance the app user has no CREATEDB of its own. "already exists" is tolerated below.
+        # env sets PGPASSWORD without a shell and quote shields each value, so a password containing
+        # $, ", \ or a backtick reaches Postgres literally rather than being mangled by shell parsing.
         command: >-
-          /bin/bash -c 'PGPASSWORD="{{ vault_postgresql_password }}"
-          createdb --username={{ vault_postgresql_user }} "{{ plausible_db }}"'
+          env PGPASSWORD={{ vault_postgresql_admin_password | quote }}
+          createdb --username=postgres --owner={{ vault_postgresql_user | quote }}
+          {{ plausible_db | quote }}
       register: postgresql_db_result
       changed_when:
         - postgresql_db_result.rc == 0
