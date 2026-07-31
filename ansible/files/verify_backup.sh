@@ -109,7 +109,11 @@ case "$STORE" in
     kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- chmod 600 "$pgpass_pod"
 
     # Baseline the live source BEFORE the backup, so the assertion compares against the data the dump
-    # captured. n_live_tup is kept current on a live DB (autovacuum), so no ANALYZE is needed here.
+    # captured. ANALYZE first: n_live_tup is only an estimate and autovacuum can lag far behind on a
+    # busy DB, so without a fresh ANALYZE the live count drifts from the freshly-ANALYZEd scratch
+    # count and the assertion compares two different numbers.
+    kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
+      env PGPASSFILE="$pgpass_pod" psql -U "$PG_SUPERUSER" -d "$VERIFY_DB" -c "ANALYZE" >/dev/null
     source_rows="$(kubectl exec -c "$PG_CONTAINER" -n "$PG_NAMESPACE" "$PG_POD" -- \
       env PGPASSFILE="$pgpass_pod" psql -U "$PG_SUPERUSER" -d "$VERIFY_DB" -Atqc \
       "SELECT COALESCE(sum(n_live_tup), 0) FROM pg_stat_user_tables")"
