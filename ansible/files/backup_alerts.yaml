@@ -10,11 +10,9 @@ spec:
   groups:
     - name: cluster-backups
       rules:
-        # The verify CronJob round-trips a fresh backup into a scratch DB; success=0 means the latest
-        # attempt could not. A single failure is a warning (BackupVerifyFailed); a failure that
-        # persists for two days escalates to critical (BackupVerifyFailing, which also covers a
-        # verification that has NEVER succeeded), and one that was working but stopped is caught by
-        # BackupVerifyStale.
+        # Verify alerts: BackupVerifyFailed warns on the latest failure; BackupVerifyFailing escalates
+        # to critical after two days (covering a never-succeeded verify too); BackupVerifyStale catches
+        # a previously-working verify that stopped.
         - alert: BackupVerifyFailed
           expr: backup_verify_success == 0
           for: 30m
@@ -25,9 +23,7 @@ spec:
             description: >-
               The latest backup-verify-{{ $labels.store }} run could not round-trip a backup into a
               scratch database. A backup that will not restore is not a backup; check the CronJob logs.
-        # Escalation for a verification that keeps failing, including one that has NEVER succeeded:
-        # backup_verify_last_success_timestamp only exists after a success, so BackupVerifyStale below
-        # cannot fire in that case. This keys on the success gauge, which the failure path always pushes.
+        # Keys on the success gauge (pushed every run), so it also catches a never-succeeded verify.
         - alert: BackupVerifyFailing
           expr: backup_verify_success == 0
           for: 2d

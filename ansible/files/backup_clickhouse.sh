@@ -38,9 +38,8 @@ while IFS="$(printf '\t')" read -r name engine; do
 done <"$work/tables.tsv"
 
 archive="clickhouse-$ts.tar.gz.age"
-# pipefail (scoped to this subshell) so a tar error is not masked by age exiting 0 on the partial
-# stream, which would upload a truncated archive that only fails at restore time. Kept local because
-# a global pipefail would also trip the retention `printf | head` below on its normal SIGPIPE.
+# Scoped pipefail so a tar failure is not masked by age exiting 0 on the partial stream. Not global:
+# the retention `printf | head` below SIGPIPEs under pipefail.
 ( set -o pipefail; tar -C "$work" -czf - . | age -r "$AGE_RECIPIENT" -o "/tmp/$archive" )
 
 dest="$RCLONE_REMOTE/clickhouse"

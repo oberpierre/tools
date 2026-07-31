@@ -22,12 +22,8 @@ trap 'rm -rf "$work" "/tmp/postgres-$ts.tar.gz.age"' EXIT
 
 pg_dumpall -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" --globals-only >"$work/globals.sql"
 
-# 'postgres' and template DBs carry no application data worth a per-DB dump. Capture the list in its
-# own assignment rather than piping `psql | while`: a pipeline hides a psql failure behind the loop's
-# zero exit, so set -e would not catch it and we would ship a globals-only "backup". As a command
-# substitution, a psql failure aborts the run here.
-# 'backup_verify%' are the transient scratch DBs the restore-verification CronJobs create; skip them
-# so an orphan (from a job killed before its cleanup) never gets rolled into a real backup.
+# postgres/template DBs hold no app data; backup_verify% are the verify CronJobs' scratch DBs. Assign
+# the list rather than `psql | while` - a psql failure in that pipe is invisible to set -e.
 dbs=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -d postgres -Atqc \
   "SELECT datname FROM pg_database
      WHERE datistemplate = false AND datname <> 'postgres' AND datname NOT LIKE 'backup_verify%'")
@@ -37,9 +33,8 @@ printf '%s\n' "$dbs" | while IFS= read -r db; do
 done
 
 archive="postgres-$ts.tar.gz.age"
-# pipefail (scoped to this subshell) so a tar error is not masked by age exiting 0 on the partial
-# stream, which would upload a truncated archive that only fails at restore time. Kept local because
-# a global pipefail would also trip the retention `printf | head` below on its normal SIGPIPE.
+# Scoped pipefail so a tar failure is not masked by age exiting 0 on the partial stream. Not global:
+# the retention `printf | head` below SIGPIPEs under pipefail.
 ( set -o pipefail; tar -C "$work" -czf - . | age -r "$AGE_RECIPIENT" -o "/tmp/$archive" )
 
 dest="$RCLONE_REMOTE/postgres"

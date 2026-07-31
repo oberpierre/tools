@@ -41,10 +41,8 @@ SUPERUSER="${PG_SUPERUSER:-postgres}"
 PG_CONTAINER="${PG_CONTAINER:-postgresql}"   # the DB container in the pod (vs the metrics sidecar)
 
 DB="" ARCHIVE="" TARGET="" MODE=""
-# set_mode rejects a second mode flag rather than letting the last one silently win: with the
-# destructive --all/--live paths, `--target scratch --all` quietly ignoring --target would overwrite
-# live databases. need_arg guards value-taking flags so a trailing `--db` prints usage instead of
-# dying on an unbound $2 under set -u.
+# Reject a second mode flag instead of letting the last silently win: on the destructive --all/--live
+# paths that could overwrite live data. need_arg keeps a missing value from dying on an unbound $2.
 set_mode() { [ -z "$MODE" ] || { echo "error: --all, --target and --live are mutually exclusive" >&2; exit 2; }; MODE="$1"; }
 need_arg() { [ "$#" -ge 2 ] || { echo "error: $1 requires a value" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do

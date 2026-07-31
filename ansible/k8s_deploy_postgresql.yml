@@ -51,9 +51,6 @@
             persistence:
               enabled: true
               size: 8Gi
-              # The chart reads primary.persistence.storageClass; storageClassName is silently
-              # ignored, leaving the PVC on the default StorageClass (correct today only because
-              # Longhorn is the default). Matches the storageClass key used for ClickHouse.
               storageClass: longhorn
 
           metrics:

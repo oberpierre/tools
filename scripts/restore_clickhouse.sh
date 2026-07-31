@@ -40,9 +40,8 @@ CH_SECRET="${CH_SECRET:-clickhouse-credentials}"
 CH_SECRET_KEY="${CH_SECRET_KEY:-admin-password}"
 
 ARCHIVE="" TARGET="" MODE=""
-# set_mode rejects a second mode flag rather than letting the last one silently win (--target and
-# --live differ, and --live is destructive). need_arg guards value-taking flags so a trailing
-# `--target` prints usage instead of dying on an unbound $2 under set -u.
+# Reject a second mode flag instead of letting the last silently win (--live is destructive).
+# need_arg keeps a missing value from dying on an unbound $2 under set -u.
 set_mode() { [ -z "$MODE" ] || { echo "error: --target and --live are mutually exclusive" >&2; exit 2; }; MODE="$1"; }
 need_arg() { [ "$#" -ge 2 ] || { echo "error: $1 requires a value" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
@@ -103,9 +102,8 @@ chq() { kubectl exec -i -c "$CH_CONTAINER" -n "$NS" "$POD" -- \
 
 case "$MODE" in
   live)
-    # "overwrite the original": drop and recreate so the bare `CREATE TABLE` DDL from SHOW CREATE
-    # (no IF NOT EXISTS, and nothing drops the live objects) does not fail every object as "already
-    # exists". This DESTROYS the current contents of the database, which is the point of --live.
+    # Drop and recreate: the DDL from SHOW CREATE is a bare CREATE TABLE, so without this every object
+    # fails as "already exists". This destroys the database's contents, which is what --live means.
     echo "WARNING: --live will DROP DATABASE \`$target\` on $NS/$POD and rebuild it from the backup." >&2
     printf 'Type the database name (%s) to confirm: ' "$target" >&2
     read -r confirm

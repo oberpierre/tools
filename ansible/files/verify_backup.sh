@@ -31,9 +31,8 @@ rows=0
 source_rows=0
 pw=""
 created=0
-# Fixed per-store name (not timestamped): concurrencyPolicy Forbid rules out overlapping runs, so a
-# stable name means a run SIGKILLed before its cleanup trap leaves at most ONE orphan, reclaimed by
-# the drop-before-create below, instead of leaking a fresh scratch DB every day.
+# Fixed name (concurrencyPolicy Forbid rules out overlap) so a killed run leaves at most one orphan,
+# reclaimed by the drop-before-create below, rather than a new scratch DB every day.
 scratch="backup_verify_$STORE"
 
 # ClickHouse admin queries go over HTTP with the password in a header (never argv), matching the
@@ -71,10 +70,8 @@ trap finish EXIT
 # restore scripts exec/cp through it). Fetched at runtime so no bespoke image has to be built/pushed,
 # same choice the backup CronJobs make. KUBECTL_VERSION pins it if the auto-detected stable drifts.
 apk add --no-cache bash age rclone curl >/dev/null
-# Match the node architecture instead of assuming amd64, and use --fail --retry so a transient
-# dl.k8s.io error does not save an HTML error page as "kubectl" (which would exec-fail later) or
-# abort the whole verification over one blip. (Caching kubectl into an image/volume would avoid the
-# nightly download entirely; not worth a custom image or PVC for a single-node job.)
+# Match the node architecture; --fail so a transient dl.k8s.io error is not saved as a bogus
+# "kubectl" binary, --retry to ride out a blip.
 case "$(uname -m)" in
   x86_64) arch=amd64 ;;
   aarch64 | arm64) arch=arm64 ;;
