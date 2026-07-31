@@ -56,6 +56,12 @@
             size: 8Gi
             storageClass: longhorn
 
+          # ClickHouse Keeper (the default coordination layer) provisions its own PVCs; pin them to
+          # longhorn too, otherwise they fall back to the cluster default storage class.
+          keeper:
+            persistence:
+              storageClass: longhorn
+
           service:
             type: ClusterIP
 
