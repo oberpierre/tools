@@ -57,8 +57,11 @@
             existingSecretPasswordKey: redis-password
 
           master:
-            # The aclfile must exist before Redis starts, or ACL SAVE has nothing to
-            # write to. Idempotent: touch never truncates a file that already exists.
+            # The aclfile must name `default` before Redis loads it, or ACLLoadFromFile
+            # replaces the existing default user with a fresh nopass one and the
+            # release's requirepass is discarded. Rewritten on every start, not only
+            # when absent, so rotating vault_redis_password takes effect. Every other
+            # line (application users registered later) is preserved.
             # runAsUser/runAsGroup match Redis's own (1001), stated rather than
             # inherited: podSecurityContext sets fsGroup but no runAsUser, so an
             # unowned file is one ACL SAVE away from failing to write.
@@ -69,10 +72,21 @@
                 securityContext:
                   runAsUser: 1001
                   runAsGroup: 1001
+                env:
+                  - name: REDIS_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: "{{ redis_secret_name }}"
+                        key: redis-password
                 command:
-                  - /bin/bash
+                  - /bin/sh
                   - -c
-                  - touch /data/users.acl
+                  - |
+                    touch /data/users.acl
+                    HASH=$(printf '%s' "$REDIS_PASSWORD" | sha256sum | cut -d' ' -f1)
+                    grep -v '^user default ' /data/users.acl > /data/users.acl.tmp
+                    printf 'user default on #%s ~* &* +@all\n' "$HASH" >> /data/users.acl.tmp
+                    mv /data/users.acl.tmp /data/users.acl
                 volumeMounts:
                   - name: redis-data
                     mountPath: /data
