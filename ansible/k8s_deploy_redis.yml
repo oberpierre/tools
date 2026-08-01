@@ -1,0 +1,105 @@
+---
+- name: Deploying Redis
+  hosts: init_controller
+  vars:
+    redis_namespace: data-services
+    redis_secret_name: redis-credentials
+  vars_files:
+    - vars/example_user_vault.yml
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Creating namespace {{ redis_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ redis_namespace }}"
+
+    - name: Creating Redis secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ redis_secret_name }}"
+            namespace: "{{ redis_namespace }}"
+          type: Opaque
+          data:
+            redis-password: "{{ vault_redis_password | b64encode }}"
+      no_log: true
+
+    - name: Installing/Upgrading Redis
+      kubernetes.core.helm:
+        name: redis
+        chart_repo_url: https://charts.bitnami.com/bitnami
+        chart_ref: redis
+        release_namespace: "{{ redis_namespace }}"
+        state: present
+        values:
+          architecture: standalone
+
+          # aclfile added to the chart's own appendonly/save defaults: setting this key
+          # replaces rather than merges with the chart default, so both must stay here.
+          commonConfiguration: |-
+            appendonly yes
+            save ""
+            aclfile /data/users.acl
+
+          auth:
+            enabled: true
+            existingSecret: "{{ redis_secret_name }}"
+            existingSecretPasswordKey: redis-password
+
+          master:
+            # The aclfile must name `default` before Redis loads it, or ACLLoadFromFile
+            # replaces the existing default user with a fresh nopass one and the
+            # release's requirepass is discarded. Rewritten on every start, not only
+            # when absent, so rotating vault_redis_password takes effect. Every other
+            # line (application users registered later) is preserved.
+            # runAsUser/runAsGroup match Redis's own (1001), stated rather than
+            # inherited: podSecurityContext sets fsGroup but no runAsUser, so an
+            # unowned file is one ACL SAVE away from failing to write.
+            initContainers:
+              - name: create-acl-file
+                # Same image the chart's own volume-permissions init container uses.
+                image: '{% raw %}{{ include "redis.volumePermissions.image" . }}{% endraw %}'
+                securityContext:
+                  runAsUser: 1001
+                  runAsGroup: 1001
+                env:
+                  - name: REDIS_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: "{{ redis_secret_name }}"
+                        key: redis-password
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    touch /data/users.acl
+                    HASH=$(printf '%s' "$REDIS_PASSWORD" | sha256sum | cut -d' ' -f1)
+                    grep -v '^user default ' /data/users.acl > /data/users.acl.tmp
+                    printf 'user default on #%s ~* &* +@all\n' "$HASH" >> /data/users.acl.tmp
+                    mv /data/users.acl.tmp /data/users.acl
+                volumeMounts:
+                  - name: redis-data
+                    mountPath: /data
+
+            persistence:
+              enabled: true
+              size: 8Gi
+              storageClass: longhorn
+
+            service:
+              type: ClusterIP
+
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
