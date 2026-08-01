@@ -6,6 +6,7 @@ This repository is a collection of tools and scripts designed to simplify and au
 
 - **[Ansible Infrastructure Setup](ansible/README.md)** - Server setup and Kubernetes cluster management
 - **[Deployment Guide](DEPLOYMENT.md)** - Deploy applications to Kubernetes via GitHub reusable workflow
+- **[Backups & Restore](BACKUPS.md)** - Encrypted off-site backups of the central databases, with on-demand pull, restore, and verification
 
 ## Structure
 

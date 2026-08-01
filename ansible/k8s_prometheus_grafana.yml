@@ -8,6 +8,7 @@
       - dashboard.example.com
     grafana_service_name: kube-prometheus-stack-grafana
     grafana_service_port: 80
+    grafana_admin_secret: grafana-admin
   vars_files:
     - vars/example_user_vault.yml
 
@@ -22,14 +23,40 @@
         mode: "0755"
       register: dest_folder
 
+    - name: Creating namespace {{ prometheus_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ prometheus_namespace }}"
+
+    - name: Creating the Grafana admin secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ grafana_admin_secret }}"
+            namespace: "{{ prometheus_namespace }}"
+          type: Opaque
+          stringData:
+            admin-user: "{{ vault_grafana_user }}"
+            admin-password: "{{ vault_grafana_password }}"
+      no_log: true
+
     - name: Creating kube-prometheus-stack values file
       ansible.builtin.copy:
         dest: "{{ dest_folder.path }}/prometheus-values.yml"
         mode: "0600"
         content: |
           grafana:
-            adminUser: "{{ vault_grafana_user }}"
-            adminPassword: "{{ vault_grafana_password }}"
+            admin:
+              existingSecret: "{{ grafana_admin_secret }}"
+              userKey: admin-user
+              passwordKey: admin-password
             grafana.ini:
               auth.anonymous:
                 enabled: false
@@ -48,6 +75,28 @@
           prometheus:
             prometheusSpec:
               serviceMonitorSelectorNilUsesHelmValues: false
+          # Alertmanager: route the backup alerts (BackupVerifyFailed/Stale, BackupStale,
+          # *MetricsMissing) to Telegram; everything else, including the always-on Watchdog
+          # heartbeat, falls through to the null sink.
+          alertmanager:
+            config:
+              route:
+                receiver: "null"
+                group_by: [alertname, store]
+                routes:
+                  - receiver: telegram
+                    matchers:
+                      - 'alertname=~"Backup.*"'
+                    group_wait: 30s
+                    group_interval: 5m
+                    repeat_interval: 4h
+              receivers:
+                - name: "null"
+                - name: telegram
+                  telegram_configs:
+                    - bot_token: "{{ vault_telegram_bot_token }}"
+                      chat_id: {{ vault_telegram_chat_id }}
+                      send_resolved: true
       register: prometheus_values
       no_log: true
 

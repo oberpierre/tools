@@ -1,0 +1,157 @@
+---
+# Continuously verify that the cluster backups are restorable. Each CronJob runs the SAME backup
+# and restore scripts the real system uses (files/verify_backup.sh drives them), round-tripping
+# live data through a throwaway age key and a local rclone remote into a scratch DB, then pushes
+# the result to Pushgateway for alerting. Depends on k8s_setup_backups.yml having created the
+# backup-scripts ConfigMap, and on k8s_deploy_pushgateway.yml for the metrics sink.
+- name: Setting up backup restore-verification
+  hosts: init_controller
+  vars:
+    backups_namespace: data-services
+    pushgateway_url: http://pushgateway.monitoring.svc.cluster.local:9091
+    verify_service_account: backup-verify
+    backup_scripts_configmap: backup-scripts
+    verify_scripts_configmap: backup-verify-scripts
+    backup_verifications:
+      - name: postgres
+        image: postgres:17-alpine
+        schedule: "0 4 * * *"
+        env:
+          # Taking the backup (over the network, like the nightly job).
+          - name: PG_HOST
+            value: postgresql.data-services.svc.cluster.local
+          - name: PG_PORT
+            value: "5432"
+          - name: PG_SUPERUSER
+            value: postgres
+          - name: PGPASSWORD
+            secret: postgresql-credentials
+            key: postgres-password
+          # Restoring + asserting (driving the pod via kubectl). VERIFY_DB picks the database whose
+          # per-DB dump is round-tripped into the scratch DB; the central Postgres may hold several.
+          - name: PG_NAMESPACE
+            value: data-services
+          - name: PG_POD
+            value: postgresql-0
+          - name: VERIFY_DB
+            value: plausible-analytics
+      - name: clickhouse
+        image: alpine:3.20
+        schedule: "0 5 * * *"
+        env:
+          - name: CH_URL
+            value: http://clickhouse.data-services.svc.cluster.local:8123
+          - name: CH_USER
+            value: "{{ vault_clickhouse_user }}"
+          - name: CH_DB
+            value: plausible_events_db
+          - name: CH_PASSWORD
+            secret: clickhouse-credentials
+            key: admin-password
+          - name: CH_NAMESPACE
+            value: data-services
+          - name: CH_POD
+            value: clickhouse-shard0-0
+  vars_files:
+    - vars/example_user_vault.yml
+
+  tasks:
+    - name: Creating namespace {{ backups_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ backups_namespace }}"
+
+    - name: Creating the backup-verify service account
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: "{{ verify_service_account }}"
+            namespace: "{{ backups_namespace }}"
+
+    - name: Creating the backup-verify role
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: "{{ verify_service_account }}"
+            namespace: "{{ backups_namespace }}"
+          # The restore scripts drive the DB pods through kubectl: exec (also how `kubectl cp`
+          # streams), the pod get that precedes it, and reading just the two credential secrets.
+          rules:
+            - apiGroups: [""]
+              resources: [pods]
+              verbs: [get, list]
+            - apiGroups: [""]
+              resources: [pods/exec]
+              verbs: [create]
+            - apiGroups: [""]
+              resources: [secrets]
+              verbs: [get]
+              resourceNames: [postgresql-credentials, clickhouse-credentials]
+
+    - name: Binding the backup-verify role to its service account
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: "{{ verify_service_account }}"
+            namespace: "{{ backups_namespace }}"
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: "{{ verify_service_account }}"
+          subjects:
+            - kind: ServiceAccount
+              name: "{{ verify_service_account }}"
+              namespace: "{{ backups_namespace }}"
+
+    - name: Creating the verify scripts config map
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ verify_scripts_configmap }}"
+            namespace: "{{ backups_namespace }}"
+          data:
+            verify_backup.sh: "{{ lookup('ansible.builtin.file', 'files/verify_backup.sh') }}"
+            restore_postgres.sh: "{{ lookup('ansible.builtin.file', '../scripts/restore_postgres.sh') }}"
+            restore_clickhouse.sh: "{{ lookup('ansible.builtin.file', '../scripts/restore_clickhouse.sh') }}"
+
+    - name: Creating verify manifest directory
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/backups"
+        state: directory
+        mode: "0755"
+      register: verify_dir
+
+    - name: Rendering backup-verify CronJobs
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/verify_cronjob.j2
+        dest: "{{ verify_dir.path }}/verify-{{ item.name }}.yml"
+        mode: "0600"
+      loop: "{{ backup_verifications }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: verify_manifests
+
+    - name: Applying backup-verify CronJobs
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item.dest }}"
+      loop: "{{ verify_manifests.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"

@@ -1,0 +1,123 @@
+---
+- name: Setting up encrypted off-site cluster backups
+  hosts: init_controller
+  vars:
+    backups_namespace: data-services
+    # rclone "remote:path" backup root; each store gets its own subfolder (/postgres,
+    # /clickhouse). Cluster-wide, one Postgres holds every product's DB, so no product name here.
+    backup_remote: gdrive:cluster-backups
+    # How many of the most recent backups to keep per store (nightly schedule => ~14 days).
+    backup_keep_last: 14
+    backup_rclone_secret: backup-rclone
+    backup_age_secret: backup-age
+    backup_scripts_configmap: backup-scripts
+    # Each script POSTs a backup_last_success_timestamp heartbeat here on success; a run that
+    # fails (or never happens) leaves it stale for the dead-man's-switch alert to catch.
+    pushgateway_url: http://pushgateway.monitoring.svc.cluster.local:9091
+    backups:
+      - name: postgres
+        image: postgres:17-alpine
+        script: backup_postgres.sh
+        schedule: "0 2 * * *"
+        env:
+          - name: PG_HOST
+            value: postgresql.data-services.svc.cluster.local
+          - name: PG_PORT
+            value: "5432"
+          - name: PG_SUPERUSER
+            value: postgres
+          - name: PGPASSWORD
+            secret: postgresql-credentials
+            key: postgres-password
+      - name: clickhouse
+        image: alpine:3.20
+        script: backup_clickhouse.sh
+        schedule: "0 3 * * *"
+        env:
+          - name: CH_URL
+            value: http://clickhouse.data-services.svc.cluster.local:8123
+          - name: CH_USER
+            value: "{{ vault_clickhouse_user }}"
+          - name: CH_DB
+            value: plausible_events_db
+          - name: CH_PASSWORD
+            secret: clickhouse-credentials
+            key: admin-password
+  vars_files:
+    - vars/example_user_vault.yml
+
+  tasks:
+    - name: Creating namespace {{ backups_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ backups_namespace }}"
+
+    - name: Creating rclone remote secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ backup_rclone_secret }}"
+            namespace: "{{ backups_namespace }}"
+          type: Opaque
+          data:
+            rclone.conf: "{{ vault_backup_rclone_conf | b64encode }}"
+      no_log: true
+
+    - name: Creating age recipient secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ backup_age_secret }}"
+            namespace: "{{ backups_namespace }}"
+          type: Opaque
+          stringData:
+            recipient: "{{ vault_backup_age_recipient }}"
+
+    - name: Creating backup scripts config map
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ backup_scripts_configmap }}"
+            namespace: "{{ backups_namespace }}"
+          data:
+            backup_postgres.sh: "{{ lookup('ansible.builtin.file', 'files/backup_postgres.sh') }}"
+            backup_clickhouse.sh: "{{ lookup('ansible.builtin.file', 'files/backup_clickhouse.sh') }}"
+
+    - name: Creating backup manifest directory
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/backups"
+        state: directory
+        mode: "0755"
+      register: backup_dir
+
+    - name: Rendering backup CronJobs
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/backup_cronjob.j2
+        dest: "{{ backup_dir.path }}/backup-{{ item.name }}.yml"
+        mode: "0600"
+      loop: "{{ backups }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: backup_manifests
+
+    - name: Applying backup CronJobs
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ item.dest }}"
+      loop: "{{ backup_manifests.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"

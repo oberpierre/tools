@@ -1,0 +1,29 @@
+---
+# Prometheus alert rules for the backup system: they fire on the metrics pushed by the nightly
+# backup scripts (backup_last_success_timestamp) and the verify CronJobs (backup_verify_*) via
+# Pushgateway. Depends on k8s_prometheus_grafana.yml (the operator that consumes PrometheusRules)
+# and on k8s_deploy_pushgateway.yml + the backup/verify CronJobs producing the metrics.
+- name: Deploying backup alert rules
+  hosts: init_controller
+
+  tasks:
+    - name: Creating the monitoring manifest directory
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/monitoring"
+        state: directory
+        mode: "0755"
+      register: manifest_dir
+
+    # copy (not template) puts the manifest on the host verbatim, so the alert annotations'
+    # {{ $labels.store }} Go-template expressions reach the operator untouched.
+    - name: Copying the backup PrometheusRule to the host
+      ansible.builtin.copy:
+        src: files/backup_alerts.yaml
+        dest: "{{ manifest_dir.path }}/backup_alerts.yaml"
+        mode: "0644"
+      register: rule_manifest
+
+    - name: Applying the backup PrometheusRule
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ rule_manifest.dest }}"

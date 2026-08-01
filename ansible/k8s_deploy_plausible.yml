@@ -1,0 +1,158 @@
+---
+- name: Deploying Plausible Analytics
+  hosts: init_controller
+  vars:
+    cluster_issuer: letsencrypt-prod
+    clickhouse_namespace: data-services
+    clickhouse_svc_name: clickhouse
+    plausible_hosts:
+      - plausible.example.com
+    plausible_base_url: "https://{{ plausible_hosts[0] }}"
+    plausible_db: plausible-analytics
+    plausible_events_db: plausible_events_db
+    plausible_namespace: analytics
+    # Default service name and port from helm chart
+    plausible_service_name: plausible-analytics
+    plausible_service_port: 8000
+    postgresql_namespace: data-services
+    postgresql_svc_name: postgresql
+  vars_files:
+    - vars/example_user_vault.yml
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Waiting for ClickHouse StatefulSet to be ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: StatefulSet
+        name: clickhouse-shard0
+        namespace: "{{ clickhouse_namespace }}"
+      register: clickhouse_sts
+      until:
+        - clickhouse_sts.resources is defined
+        - clickhouse_sts.resources | length > 0
+        - (clickhouse_sts.resources[0].status.readyReplicas | default(0) | int) == (clickhouse_sts.resources[0].spec.replicas | default(1) | int)
+        - (clickhouse_sts.resources[0].status.updatedReplicas | default(0) | int) == (clickhouse_sts.resources[0].spec.replicas | default(1) | int)
+        - (clickhouse_sts.resources[0].status.currentReplicas | default(0) | int) == (clickhouse_sts.resources[0].spec.replicas | default(1) | int)
+      retries: 10
+      delay: 15
+
+    - name: Creating ClickHouse database
+      kubernetes.core.k8s_exec:
+        namespace: "{{ clickhouse_namespace }}"
+        pod: clickhouse-shard0-0
+        container: clickhouse # target the DB container explicitly, not the metrics sidecar
+        command: >-
+          clickhouse-client --user={{ vault_clickhouse_user }} --password="{{ vault_clickhouse_password }}"
+          --query="CREATE DATABASE \"{{ plausible_events_db }}\""
+      register: clickhouse_db_result
+      changed_when:
+        - clickhouse_db_result.rc == 0
+        - "'already exists' not in (clickhouse_db_result.stderr | default(''))"
+      failed_when:
+        - clickhouse_db_result.rc != 0
+        - "'already exists' not in (clickhouse_db_result.stderr | default(''))"
+      no_log: true
+
+    - name: Creating PostgreSQL database
+      kubernetes.core.k8s_exec:
+        namespace: "{{ postgresql_namespace }}"
+        pod: postgresql-0
+        container: postgresql # target the DB container explicitly, not the metrics sidecar
+        # createdb as the postgres superuser (it always has CREATEDB) but hand ownership to the app
+        # user, so Plausible - which connects as that user - can create its tables. On a fresh
+        # instance the app user has no CREATEDB of its own. "already exists" is tolerated below.
+        # env sets PGPASSWORD without a shell and quote shields each value, so a password containing
+        # $, ", \ or a backtick reaches Postgres literally rather than being mangled by shell parsing.
+        command: >-
+          env PGPASSWORD={{ vault_postgresql_admin_password | quote }}
+          createdb --username=postgres --owner={{ vault_postgresql_user | quote }}
+          {{ plausible_db | quote }}
+      register: postgresql_db_result
+      changed_when:
+        - postgresql_db_result.rc == 0
+        - "'already exists' not in (postgresql_db_result.stderr | default(''))"
+      failed_when:
+        - postgresql_db_result.rc != 0
+        - "'already exists' not in (postgresql_db_result.stderr | default(''))"
+      no_log: true
+
+    - name: Creating connection URLs
+      # urlencode the credentials so a password with URL-reserved characters (@ / : # ?) cannot
+      # corrupt the authority/host parsing of the connection string. no_log because these facts
+      # embed the DB passwords in cleartext.
+      ansible.builtin.set_fact:
+        postgresql_url: >-
+          {{ "postgres://" + (vault_postgresql_user | urlencode) + ":" + (vault_postgresql_password | urlencode) + "@" +
+          postgresql_svc_name + "." + postgresql_namespace + ".svc.cluster.local:5432/" + plausible_db }}
+        clickhouse_url: >-
+          {{ "http://" + (vault_clickhouse_user | urlencode) + ":" + (vault_clickhouse_password | urlencode) + "@" +
+          clickhouse_svc_name + "." + clickhouse_namespace + ".svc.cluster.local:8123/" + plausible_events_db }}
+      no_log: true
+
+    - name: Installing/Upgrading Plausible Analytics
+      kubernetes.core.helm:
+        name: plausible-analytics
+        chart_repo_url: https://imio.github.io/helm-charts
+        chart_ref: plausible-analytics
+        release_namespace: "{{ plausible_namespace }}"
+        create_namespace: true
+        state: present
+        values:
+          disableRegistration: true
+          baseURL: "{{ plausible_base_url }}"
+          databaseURL: "{{ postgresql_url }}"
+          clickhouseDatabaseURL: "{{ clickhouse_url }}"
+
+          clickhouse:
+            enabled: false # we are using external clickhouse & postgresql instances
+          postgresql:
+            enabled: false
+      no_log: true # databaseURL/clickhouseDatabaseURL embed the DB passwords
+
+    - name: Waiting for Plausible service to be available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: plausible-analytics
+        namespace: "{{ plausible_namespace }}"
+      register: plausible_deployment
+      until:
+        - plausible_deployment.resources is defined
+        - plausible_deployment.resources | length > 0
+        - (plausible_deployment.resources[0].status.availableReplicas | default(0) | int) > 0
+        - (plausible_deployment.resources[0].status.readyReplicas | default(0) | int) > 0
+        - (plausible_deployment.resources[0].status.updatedReplicas | default(0) | int) == (plausible_deployment.resources[0].spec.replicas | default(1) | int)
+      retries: 10
+      delay: 15
+
+    - name: Creating plausible folder
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/plausible"
+        state: directory
+        mode: "0755"
+      register: dest_folder
+
+    - name: Deploying Plausible ingress
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/ingress_deployment.j2
+        dest: "{{ dest_folder.path }}/ingress.yml"
+        mode: "0600"
+      vars:
+        app_name: plausible
+        cluster_issuer_name: "{{ cluster_issuer }}"
+        create_deployment: false
+        create_service: false
+        external_service_name: "{{ plausible_service_name }}"
+        external_service_port: "{{ plausible_service_port }}"
+        metadata_namespace: "{{ plausible_namespace }}"
+        tls_hosts: "{{ plausible_hosts }}"
+      register: ingress
+
+    - name: Applying Plausible ingress
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ ingress.dest }}"

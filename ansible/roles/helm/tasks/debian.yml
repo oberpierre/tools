@@ -1,4 +1,12 @@
 ---
+# Helm's Debian/apt repository moved from baltocdn.com to packages.buildkite.com; the old baltocdn
+# repo now serves an invalid InRelease and breaks `apt update`, so we drop it and use the new one.
+- name: Removing the deprecated baltocdn Helm apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/helm.asc] https://baltocdn.com/helm/stable/debian/ all main"
+    state: absent
+  become: true
+
 - name: Adding Helm apt-key
   ansible.builtin.get_url:
     url: https://packages.buildkite.com/helm-linux/helm-debian/gpgkey

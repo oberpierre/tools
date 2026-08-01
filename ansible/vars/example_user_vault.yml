@@ -1,6 +1,29 @@
+---
 # You can specify your secrets in a vault file (see https://docs.ansible.com/ansible/latest/vault_guide/vault.html)
-vault_admin_password: sha512_encrypted_string
+vault_admin_password: sha512_encrypted_string # You may use for example mkpasswd to create a SHA-512 hashed password for your users
 vault_grafana_user: admin
 vault_grafana_password: password
-# You may use for example mkpasswd to create a SHA-512 hashed password for your users and encrypt as follows:
+vault_postgresql_admin_password: password # Password for the "postgres" admin user
+vault_postgresql_user: dbuser
+vault_postgresql_password: dbpassword
+vault_clickhouse_user: clickhouse
+vault_clickhouse_password: password
+# Off-site backups: rclone remote config (containing Google Drive OAuth token).
+# Generate on your machine with `rclone config` for a "drive" remote named to match backup_remote.
+vault_backup_rclone_conf: |
+  [gdrive]
+  type = drive
+  scope = drive.file
+  token = {"access_token":"...","token_type":"Bearer","refresh_token":"...","expiry":"..."}
+# Backups are encrypted with age (github.com/FiloSottile/age), which uses a keypair. The cluster holds
+# the public key only below and encrypts every backup to it. Keep the matching PRIVATE offline for restoration!
+# Create the pair once with `age-keygen -o age.key` (it prints "Public key: age1...", put that
+# value here, and keep age.key somewhere safe off the cluster).
+vault_backup_age_recipient: age1examplerecipientreplaceme
+# Telegram alerting: Alertmanager delivers backup alerts to a Telegram chat.
+# Create a bot with @BotFather (it gives you the token); get your numeric chat id by messaging the
+# bot then reading https://api.telegram.org/bot<token>/getUpdates, or by asking @userinfobot.
+vault_telegram_bot_token: "123456789:REPLACE_WITH_YOUR_BOTFATHER_TOKEN"
+vault_telegram_chat_id: 123456789
+# Encrypt the vault as follows:
 # > ansible-vault encrypt example_user_vault.yml

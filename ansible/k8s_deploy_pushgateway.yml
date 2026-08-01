@@ -1,0 +1,33 @@
+---
+- name: Deploying Prometheus Pushgateway
+  hosts: init_controller
+  vars:
+    pushgateway_namespace: monitoring
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Deploying Prometheus Pushgateway
+      kubernetes.core.helm:
+        name: pushgateway
+        chart_repo_url: https://prometheus-community.github.io/helm-charts
+        chart_ref: prometheus-pushgateway
+        release_namespace: "{{ pushgateway_namespace }}"
+        create_namespace: true
+        state: present
+        values:
+          # Fixed name so the push URL is stable (pushgateway.monitoring.svc, not a release-prefixed one).
+          fullnameOverride: pushgateway
+          serviceMonitor:
+            enabled: true
+          # Persist metrics so backup heartbeats survive a reschedule, which the staleness /
+          # dead-man's-switch alerts depend on. The PVC alone is inert: Pushgateway keeps series in
+          # memory unless --persistence.file points at the mount (default mountPath is /data).
+          extraArgs:
+            - --persistence.file=/data/pushgateway.data
+            - --persistence.interval=1m
+          persistentVolume:
+            enabled: true
+            size: 1Gi
+            storageClass: longhorn
