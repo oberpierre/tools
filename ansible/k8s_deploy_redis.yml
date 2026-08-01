@@ -1,0 +1,64 @@
+---
+- name: Deploying Redis
+  hosts: init_controller
+  vars:
+    redis_namespace: data-services
+    redis_secret_name: redis-credentials
+  vars_files:
+    - vars/example_user_vault.yml
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Creating namespace {{ redis_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ redis_namespace }}"
+
+    - name: Creating Redis secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ redis_secret_name }}"
+            namespace: "{{ redis_namespace }}"
+          type: Opaque
+          data:
+            redis-password: "{{ vault_redis_password | b64encode }}"
+      no_log: true
+
+    - name: Installing/Upgrading Redis
+      kubernetes.core.helm:
+        name: redis
+        chart_repo_url: https://charts.bitnami.com/bitnami
+        chart_ref: redis
+        release_namespace: "{{ redis_namespace }}"
+        state: present
+        values:
+          architecture: standalone
+
+          auth:
+            enabled: true
+            existingSecret: "{{ redis_secret_name }}"
+            existingSecretPasswordKey: redis-password
+
+          master:
+            persistence:
+              enabled: true
+              size: 8Gi
+              storageClass: longhorn
+
+            service:
+              type: ClusterIP
+
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true

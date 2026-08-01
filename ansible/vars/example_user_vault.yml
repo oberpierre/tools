@@ -8,6 +8,7 @@ vault_postgresql_user: dbuser
 vault_postgresql_password: dbpassword
 vault_clickhouse_user: clickhouse
 vault_clickhouse_password: password
+vault_redis_password: password
 # Off-site backups: rclone remote config (containing Google Drive OAuth token).
 # Generate on your machine with `rclone config` for a "drive" remote named to match backup_remote.
 vault_backup_rclone_conf: |
