@@ -1,0 +1,10 @@
+---
+# Every registration below targets this namespace, so it is created first.
+- name: Creating namespace {{ app_namespace }}
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ app_namespace }}"

@@ -1,0 +1,80 @@
+---
+# Central Redis admin credentials (the `default` user), read from the cluster rather
+# than passed in, mirroring postgres.yml.
+- name: Reading Redis admin credentials
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: redis-credentials
+    namespace: data-services
+  register: app_platform_redis_admin_secret
+
+- name: Decoding Redis admin password
+  ansible.builtin.set_fact:
+    app_platform_redis_admin_password: >-
+      {{ app_platform_redis_admin_secret.resources[0].data['redis-password'] | b64decode }}
+  no_log: true
+
+- name: Registering Redis ACL user {{ item.name }}
+  kubernetes.core.k8s_exec:
+    namespace: data-services
+    pod: redis-master-0
+    container: redis # target the DB container explicitly, not the metrics sidecar
+    # reset clears whatever a previous deploy left before the declared rules are
+    # (re)applied, so a narrowed or renamed ACL string fully replaces the old one
+    # instead of merging with it. The ACL string itself is only ever item.acl: this
+    # role never assumes a scope or writes one of its own.
+    command: >-
+      redis-cli -a {{ app_platform_redis_admin_password | quote }} --no-auth-warning
+      ACL SETUSER {{ item.name | quote }} reset on >{{ item.password | quote }} {{ item.acl }}
+  loop: "{{ redis_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: app_platform_redis_acl_result
+  # redis-cli exits 0 even when the server rejects the command, so rc alone never
+  # catches a bad ACL string or a rotated admin password. The real check is the next
+  # task, kept separate so this one can stay no_log (it carries the admin password)
+  # without also hiding why it failed.
+  failed_when: false
+  no_log: true
+
+- name: Failing on a Redis ACL registration that did not apply cleanly
+  ansible.builtin.fail:
+    msg: >-
+      Redis ACL registration failed for user {{ item.item.name }}
+      (transport rc={{ item.rc }}): {{ item.stdout }}
+  loop: "{{ app_platform_redis_acl_result.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  # An allowlist, not a blocklist: redis-cli splits its output across both streams, so
+  # an error string picked up from stdout alone can miss a failure that only shows on
+  # stderr, and a list of tokens is only ever as complete as what someone already
+  # thought to name. ACL SETUSER has exactly one success reply, so anything that is
+  # not that reply fails, whatever it says and on whichever stream it says it.
+  when: >-
+    item.rc != 0 or (item.stdout | default('') | trim) != 'OK'
+
+- name: Persisting Redis ACL users
+  kubernetes.core.k8s_exec:
+    namespace: data-services
+    pod: redis-master-0
+    container: redis
+    command: >-
+      redis-cli -a {{ app_platform_redis_admin_password | quote }} --no-auth-warning ACL SAVE
+  register: app_platform_redis_save_result
+  # Same stdout-based check as above: the failure this guards against is a registered
+  # user that works until the next restart and then silently stops authenticating.
+  failed_when: false
+  no_log: true
+
+- name: Failing if Redis ACL persistence did not apply cleanly
+  ansible.builtin.fail:
+    msg: >-
+      Redis ACL SAVE failed (transport rc={{ app_platform_redis_save_result.rc }}):
+      {{ app_platform_redis_save_result.stdout }}
+  # Same allowlist as the registration check above: ACL SAVE has exactly one success
+  # reply, so anything else fails rather than being matched against a guessed list of
+  # error strings.
+  when: >-
+    app_platform_redis_save_result.rc != 0 or
+    (app_platform_redis_save_result.stdout | default('') | trim) != 'OK'

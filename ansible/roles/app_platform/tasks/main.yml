@@ -1,0 +1,22 @@
+---
+# Validation runs first and unconditionally, ahead of the namespace, so a var file
+# that gets one list wrong cannot have the other list's k8s_exec calls run before the
+# whole file has been checked. Namespace next so nothing else races it; secrets last
+# since they depend on the credentials the middle two steps just registered.
+- name: Validating the declared registrations
+  ansible.builtin.include_tasks: validate.yml
+
+- name: Creating the application namespace
+  ansible.builtin.include_tasks: namespace.yml
+
+- name: Registering Postgres databases
+  ansible.builtin.include_tasks: postgres.yml
+  when: postgres_databases | default([]) | length > 0
+
+- name: Registering Redis ACL users
+  ansible.builtin.include_tasks: redis.yml
+  when: redis_users | default([]) | length > 0
+
+- name: Writing application Secrets
+  ansible.builtin.include_tasks: secrets.yml
+  when: app_secrets | default({}) | length > 0
