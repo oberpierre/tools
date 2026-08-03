@@ -93,6 +93,101 @@ jobs:
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
 ```
 
+## Multi-Workload Deployments
+
+The Quick Start above deploys one Deployment behind one Ingress. Some applications are not shaped that way: a set of background workers and scheduled jobs that share a namespace and central datastores, none of which necessarily serve HTTP. For this shape, set the `playbook` input to `k8s_deploy_workloads.yml` instead of relying on the default.
+
+Unlike `k8s_deploy_app.yml`, this playbook does not create a container registry pull secret, so it expects images pullable without one (e.g. public, or already present on the node). It also runs [`roles/app_platform`](ansible/roles/app_platform) first, which registers the application's namespace, Postgres databases and Redis ACL users against the cluster's central Postgres and Redis instances (`k8s_deploy_postgresql.yml`, `k8s_deploy_redis.yml`), and writes their resulting credentials into namespace Secrets. None of that requires the calling pipeline to hold the datastores' admin credentials: the role reads those from the cluster itself.
+
+### 1. Prepare Your Variables File
+
+```yaml
+# vars/my-app-workloads.yml
+app_name: my-app
+app_namespace: my-app
+
+# Optional. Each entry registers a role and database against the cluster's central
+# PostgreSQL instance, creating either if missing and always (re)setting the password.
+postgres_databases:
+  - name: my_app_db
+    user: my_app
+    password: "{{ lookup('env', 'APP_DB_PASSWORD') }}"
+
+# Optional. Each entry registers an ACL user against the cluster's central Redis
+# instance. `acl` is the raw ACL rule string this application needs (key patterns and
+# command categories); this repo never assumes or writes one on your behalf. The name
+# must not be "default" and the password must not be empty.
+redis_users:
+  - name: my-app
+    password: "{{ lookup('env', 'APP_REDIS_PASSWORD') }}"
+    acl: "~my-app:* +@read +@write +@connection"
+
+# Optional. Written as Secrets into app_namespace, one Secret per top-level key. Each
+# key's value becomes that Secret's stringData verbatim, so nested keys become env var
+# names verbatim once referenced via a workload's env_from below.
+app_secrets:
+  my-app-postgres:
+    POSTGRES_HOST: postgresql.data-services.svc.cluster.local
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: my_app_db
+    POSTGRES_USER: my_app
+    POSTGRES_PASSWORD: "{{ lookup('env', 'APP_DB_PASSWORD') }}"
+  my-app-redis:
+    REDIS_HOST: redis-master.data-services.svc.cluster.local
+    REDIS_PORT: "6379"
+    REDIS_USERNAME: my-app # must match a redis_users name above
+    REDIS_PASSWORD: "{{ lookup('env', 'APP_REDIS_PASSWORD') }}"
+
+# Required. One entry per Deployment or CronJob to deploy.
+workloads:
+  - name: worker
+    kind: Deployment # Deployment | CronJob
+    image: "{{ lookup('env', 'WORKER_IMAGE') }}"
+    replicas: 1
+    env_from: [my-app-postgres, my-app-redis] # Secret names above, applied as envFrom
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    # service: and ingress: omitted -> no Service, no Ingress created for this workload
+  - name: nightly-job
+    kind: CronJob
+    schedule: "0 3 * * *" # standard cron syntax
+    image: "{{ lookup('env', 'NIGHTLY_JOB_IMAGE') }}"
+    env_from: [my-app-postgres]
+  - name: frontend
+    kind: Deployment
+    image: "{{ lookup('env', 'FRONTEND_IMAGE') }}"
+    replicas: 2
+    env_from: [my-app-postgres]
+    # A workload with `service` but no `ingress` gets a ClusterIP Service only. Both
+    # together get a Service plus an Ingress with a cert-manager-issued TLS certificate.
+    service:
+      port: 8000
+    ingress:
+      hosts: [my-app.example.com]
+```
+
+Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, a non-root pod `securityContext`, `restartPolicy: OnFailure` for CronJobs) is not settable per workload; these are the same for every workload this playbook deploys. `runAsNonRoot: true` means the container image must already run as a non-root user, or the pod fails to start.
+
+### 2. Use in your CI/CD pipeline
+
+```yaml
+name: Deploy workloads
+
+jobs:
+  deploy:
+    uses: oberpierre/tools/.github/workflows/deploy-to-k8s.yml@v1
+    with:
+      playbook: k8s_deploy_workloads.yml
+      ansible_var_file: vars/my-app-workloads.yml
+    secrets:
+      ansible_inventory_content: ${{ secrets.ANSIBLE_INVENTORY }}
+      ssh_known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+      ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+```
+
+Set `WORKER_IMAGE`, `NIGHTLY_JOB_IMAGE`, `FRONTEND_IMAGE`, `APP_DB_PASSWORD` and `APP_REDIS_PASSWORD` (whatever your workloads and registrations reference) as environment variables on the job, the same way `container_image` and `REGISTRY_PASSWORD` work in the Quick Start above.
+
 ## Configuration Options
 
 ### Ansible Variables
@@ -125,6 +220,7 @@ See also [Workflow](.github/workflows/deploy-to-k8s.yml) inputs/secrets section.
 | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ansible_var_file | X        | Path to the variable file (relative to the calling repository root) to pass to ansible. DO NOT specify secrets here.                                                                                                                                   | `vars/my-app-prod.yml`                                                                                                                                                                                                                                              |
 | container_image  |          | Container image to deploy. For dynamic generation of the container image name, will be made available as CONTAINER_IMAGE environment variable and can be referenced using `"{{ lookup('ansible.builtin.env', 'CONTAINER_IMAGE') }}"` in your var file. | Enables dynamically targeting specific versions of the container, potentially based on an output of your previous jobs like `${{ needs.release.outputs.container_tag }}`, instead of relying on `latest` or manually updating the version in your Ansible var file. |
+| playbook         |          | Playbook in `tools/ansible` to run. See [Multi-Workload Deployments](#multi-workload-deployments) for the alternative shape this enables.                                                                                                              | Default: `k8s_deploy_app.yml`                                                                                                                                                                                                                                       |
 
 #### Secrets
 

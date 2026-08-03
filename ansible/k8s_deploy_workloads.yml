@@ -1,0 +1,43 @@
+---
+- name: Deploying application workloads to Kubernetes
+  hosts: all
+
+  roles:
+    # Registers the namespace, Postgres and Redis credentials, and app Secrets the
+    # workloads below assume already exist before their envFrom can resolve.
+    - app_platform
+
+  tasks:
+    - name: Rejecting a workload that declares ingress without service
+      ansible.builtin.assert:
+        that:
+          - not (item.ingress is defined and item.service is not defined)
+        fail_msg: >-
+          workloads entry {{ item.name | default('(unnamed)') }} declares ingress
+          without service. An Ingress needs a backend Service and port to attach to,
+          so declare service (with the port to expose) alongside ingress, or drop
+          ingress if this workload should not be reachable from outside the cluster.
+        quiet: true
+      loop: "{{ workloads }}"
+      loop_control:
+        label: "{{ item.name | default('(unnamed)') }}"
+
+    - name: Create app directory for manifests
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/{{ app_name }}"
+        state: directory
+        mode: "0755"
+      register: app_dir
+
+    - name: Create workloads manifest
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/workloads.j2
+        dest: "{{ app_dir.path }}/{{ app_name }}-workloads.yml"
+        mode: "0600"
+      register: workloads_manifest
+
+    - name: Deploy application workloads {{ app_name }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ workloads_manifest.dest }}"

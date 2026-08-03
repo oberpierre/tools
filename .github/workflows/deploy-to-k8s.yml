@@ -10,6 +10,11 @@ on:
         description: "Container image to deploy. For dynamic generation of the container image name, will be made available as CONTAINER_IMAGE environment variable and can be referenced as such in your Ansible variable file."
         required: false
         type: string
+      playbook:
+        description: "Playbook in tools/ansible to run. Defaults to the single-app ingress deployment."
+        required: false
+        type: string
+        default: "k8s_deploy_app.yml"
     secrets:
       ansible_inventory_content:
         description: "Content of the Ansible inventory file to use for deployment."
@@ -76,7 +81,7 @@ jobs:
         run: |
           cd tools/ansible
           echo "${{ secrets.ansible_inventory_content }}" > inventory
-          ansible-playbook k8s_deploy_app.yml -i inventory \
+          ansible-playbook ${{ inputs.playbook }} -i inventory \
             --extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}"
         env:
           CONTAINER_IMAGE: ${{ inputs.container_image }}
