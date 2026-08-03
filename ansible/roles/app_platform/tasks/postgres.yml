@@ -1,0 +1,98 @@
+---
+# Central Postgres admin credentials, read from the cluster rather than passed in: the
+# calling pipeline must have kubeconfig.
+- name: Reading PostgreSQL admin credentials
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: postgresql-credentials
+    namespace: data-services
+  register: app_platform_postgres_admin_secret
+
+- name: Decoding PostgreSQL admin password
+  ansible.builtin.set_fact:
+    app_platform_postgres_admin_password: >-
+      {{ app_platform_postgres_admin_secret.resources[0].data['postgres-password'] | b64decode }}
+  no_log: true
+
+- name: Creating Postgres role {{ item.user }}
+  kubernetes.core.k8s_exec:
+    namespace: data-services
+    pod: postgresql-0
+    container: postgresql # target the DB container explicitly, not the metrics sidecar
+    # item.user reaches SQL as an identifier, not a literal, so it is quoted as one:
+    # wrapped in double quotes with any embedded double quote doubled. Unquoted, a
+    # hyphenated name is a syntax error, and a name holding a quote or semicolon runs
+    # as a second statement with the superuser's privileges.
+    command: >-
+      env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}
+      psql --username=postgres -c {{ ("CREATE ROLE " + pg_role_ident + " WITH LOGIN;") | quote }}
+  vars:
+    pg_role_ident: >-
+      "{{ item.user | replace('"', '""') }}"
+  loop: "{{ postgres_databases }}"
+  loop_control:
+    label: "{{ item.user }}"
+  register: app_platform_postgres_role_result
+  # A role that already exists is left as-is here; the next task sets its password
+  # unconditionally, which is what makes the declared credential authoritative.
+  changed_when:
+    - app_platform_postgres_role_result.rc == 0
+    - "'already exists' not in (app_platform_postgres_role_result.stderr | default(''))"
+  failed_when:
+    - app_platform_postgres_role_result.rc != 0
+    - "'already exists' not in (app_platform_postgres_role_result.stderr | default(''))"
+  no_log: true
+
+- name: Setting Postgres role password for {{ item.user }}
+  kubernetes.core.k8s_exec:
+    namespace: data-services
+    pod: postgresql-0
+    container: postgresql
+    # psql's -v/:'var' substitution is only performed for input read as a script, not
+    # for a -c string, so the password is embedded directly: doubled single quotes
+    # escape it as a SQL literal, and quoting the whole -c argument keeps it one shell
+    # token no matter what other characters (spaces, quotes, backslashes) it holds.
+    # item.user is quoted as a SQL identifier for the same reason (see the task above).
+    command: >-
+      env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}
+      psql --username=postgres
+      -c {{ ("ALTER ROLE " + pg_role_ident + " WITH PASSWORD '" +
+      (item.password | replace("'", "''")) + "';") | quote }}
+  vars:
+    pg_role_ident: >-
+      "{{ item.user | replace('"', '""') }}"
+  loop: "{{ postgres_databases }}"
+  loop_control:
+    label: "{{ item.user }}"
+  register: app_platform_postgres_password_result
+  # k8s_exec always reports success regardless of the command's exit code, so a real
+  # failure here has to be raised explicitly or it is silently swallowed.
+  failed_when: app_platform_postgres_password_result.rc != 0
+  no_log: true
+
+- name: Creating Postgres database {{ item.name }}
+  kubernetes.core.k8s_exec:
+    namespace: data-services
+    pod: postgresql-0
+    container: postgresql
+    # createdb as the superuser (it always has CREATEDB) but hand ownership to the
+    # role, matching k8s_deploy_plausible.yml. "already exists" is tolerated: an
+    # existing database is left alone, only a missing one is created. createdb quotes
+    # --owner as a SQL identifier internally, so the shell quote below is enough:
+    # verified against postgres:17-alpine that a hyphenated owner and one holding a
+    # quote and a semicolon both land as the literal role name, not a second statement.
+    command: >-
+      env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}
+      createdb --username=postgres --owner={{ item.user | quote }} {{ item.name | quote }}
+  loop: "{{ postgres_databases }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: app_platform_postgres_db_result
+  changed_when:
+    - app_platform_postgres_db_result.rc == 0
+    - "'already exists' not in (app_platform_postgres_db_result.stderr | default(''))"
+  failed_when:
+    - app_platform_postgres_db_result.rc != 0
+    - "'already exists' not in (app_platform_postgres_db_result.stderr | default(''))"
+  no_log: true

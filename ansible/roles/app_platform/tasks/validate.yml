@@ -1,0 +1,57 @@
+---
+# Registering against a shared datastore's own administrative identity, or with no
+# password at all, does not fail on either side: Redis and Postgres both accept it
+# and the caller's declared entry goes live anyway. Both mistakes are asserted here,
+# naming the offending entry, before anything is registered.
+
+- name: Rejecting a Redis user named default
+  ansible.builtin.assert:
+    that:
+      - item.name != 'default'
+    fail_msg: >-
+      redis_users declares a user named "default" which is reserved for Redis's
+      administrative identity. Apps may not declare a user with this name.
+      Rename this entry.
+    quiet: true
+  loop: "{{ redis_users | default([]) }}"
+  loop_control:
+    label: "{{ item.name | default('(unnamed)') }}"
+
+- name: Rejecting an empty or whitespace-only Redis user password
+  ansible.builtin.assert:
+    that:
+      - (item.password | default('') | trim) != ''
+    fail_msg: >-
+      redis_users entry {{ item.name | default('(unnamed)') }} declares an empty or
+      whitespace-only password, which would result in a no-password Redis user. Apps
+      must supply a real password. Provide a password or fix whatever environment
+      variable was meant to hold it.
+    quiet: true
+  loop: "{{ redis_users | default([]) }}"
+  loop_control:
+    label: "{{ item.name | default('(unnamed)') }}"
+
+- name: Rejecting a Postgres role named postgres
+  ansible.builtin.assert:
+    that:
+      - item.user != 'postgres'
+    fail_msg: >-
+      postgres_databases declares a role named "postgres", which is reserved for the Postgres
+      administrative identity. Apps must not declare a role with this name. Rename this entry.
+    quiet: true
+  loop: "{{ postgres_databases | default([]) }}"
+  loop_control:
+    label: "{{ item.user | default('(unnamed)') }}"
+
+- name: Rejecting an empty or whitespace-only Postgres role password
+  ansible.builtin.assert:
+    that:
+      - (item.password | default('') | trim) != ''
+    fail_msg: >-
+      postgres_databases entry {{ item.user | default('(unnamed)') }} declares an
+      empty or whitespace-only password. Apps must supply a real password. Provide
+      a password or fix whatever environment variable was meant to hold it.
+    quiet: true
+  loop: "{{ postgres_databases | default([]) }}"
+  loop_control:
+    label: "{{ item.user | default('(unnamed)') }}"
