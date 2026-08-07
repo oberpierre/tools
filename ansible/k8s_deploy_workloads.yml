@@ -56,6 +56,40 @@
       loop_control:
         label: "{{ item.name | default('(unnamed)') }}"
 
+    # registry[item] is defined is false both when the key is absent from the block
+    # and when it is present but its value is an overlay variable the caller never
+    # supplied, so this catches a partial block regardless of which way it is partial.
+    - name: Rejecting a registry block missing a required key
+      ansible.builtin.assert:
+        that:
+          - registry[item] is defined
+        fail_msg: >-
+          registry.{{ item }} does not resolve. registry.host, registry.username and
+          registry.password are required together; omit registry entirely to deploy
+          public images rather than leaving it partially filled in.
+        quiet: true
+      when: registry is defined
+      loop: ["host", "username", "password"]
+      loop_control:
+        label: "{{ item }}"
+
+    # Runs before roles: for the same reason as the checks above: workloads is read
+    # only when the manifest template renders, after roles: has already rotated the
+    # Postgres password and ACL SAVEd the Redis users, so an image the overlay forgot
+    # would otherwise surface as a half-honoured var file instead of a clean refusal.
+    - name: Rejecting a workload whose image the overlay did not supply
+      ansible.builtin.assert:
+        that:
+          - item.image is defined
+        fail_msg: >-
+          workloads entry {{ item.name | default('(unnamed)') }} references an image
+          that does not resolve. Supply its value through ansible_extra_vars before
+          running this playbook.
+        quiet: true
+      loop: "{{ workloads }}"
+      loop_control:
+        label: "{{ item.name | default('(unnamed)') }}"
+
   roles:
     # Registers the namespace, Postgres and Redis credentials, and app Secrets the
     # workloads below assume already exist before their envFrom can resolve.
@@ -113,8 +147,14 @@
         state: present
         src: "{{ workloads_manifest.dest }}"
 
-    # No failed_when here: a wait that cannot succeed fails the task on its own,
-    # which is what turns a bad pull red while the registry token is still alive.
+    # No failed_when here: a wait that cannot succeed fails the task on its own. This is
+    # a health check, not a race against a credential's lifetime: readyReplicas counts
+    # the outgoing revision's pods too, and at replicas: 1 the default 25% maxUnavailable
+    # floors to 0, so the old condition was already satisfied by the previous rollout the
+    # instant apply returned. Waiting on the generation, updated count and unavailable
+    # count instead means an image that cannot be pulled or started fails the pipeline.
+    # A CronJob gets no wait: creating one creates no pod, so nothing here would prove
+    # its image can be pulled any earlier than the first scheduled run does.
     - name: Waiting for Deployments to reach declared replicas
       kubernetes.core.k8s_info:
         api_version: apps/v1
@@ -124,21 +164,11 @@
       register: workload_deployment_status
       until:
         - workload_deployment_status.resources | length > 0
-        - workload_deployment_status.resources[0].status.readyReplicas | default(0) == (item.replicas | default(1))
+        - workload_deployment_status.resources[0].status.observedGeneration | default(-1) >= workload_deployment_status.resources[0].metadata.generation
+        - workload_deployment_status.resources[0].status.updatedReplicas | default(0) == workload_deployment_status.resources[0].spec.replicas
+        - workload_deployment_status.resources[0].status.unavailableReplicas | default(0) == 0
       retries: 10
       delay: 15
       loop: "{{ workloads | selectattr('kind', 'equalto', 'Deployment') | list }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Confirming CronJobs exist
-      kubernetes.core.k8s_info:
-        api_version: batch/v1
-        kind: CronJob
-        name: "{{ item.name }}"
-        namespace: "{{ app_namespace }}"
-      register: workload_cronjob_status
-      failed_when: workload_cronjob_status.resources | length == 0
-      loop: "{{ workloads | selectattr('kind', 'equalto', 'CronJob') | list }}"
       loop_control:
         label: "{{ item.name }}"

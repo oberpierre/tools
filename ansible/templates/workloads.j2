@@ -43,7 +43,7 @@ spec:
           resources:
             {{ workload.resources | to_nice_yaml(indent=2) | indent(12) }}
           {% endif %}
-      {% if registry is defined %}
+      {% if reg_auth is defined %}
       imagePullSecrets:
         - name: {{ app_name }}-regcred
       {% endif %}
@@ -57,6 +57,7 @@ metadata:
     app: {{ workload.name }}
 spec:
   schedule: "{{ workload.schedule }}"
+  concurrencyPolicy: Forbid
   jobTemplate:
     spec:
       template:
@@ -64,8 +65,12 @@ spec:
           labels:
             app: {{ workload.name }}
         spec:
-          # Scheduled runs never restart in place; a failed attempt is left to the next
-          # schedule tick, matching how the backup and verify CronJobs already behave.
+          # OnFailure restarts the failed container in place, up to backoffLimit,
+          # before the Job is left for the next schedule tick. The backup and verify
+          # CronJobs use Never and get a fresh Pod per attempt instead, because those
+          # are two scripts this repo owns and knows are safe to rerun from a blank
+          # Pod; a workload's image here is application code this platform does not
+          # control, so a cheap in-place retry is the safer default.
           restartPolicy: OnFailure
           securityContext:
             runAsNonRoot: true
@@ -84,7 +89,7 @@ spec:
               resources:
                 {{ workload.resources | to_nice_yaml(indent=2) | indent(16) }}
               {% endif %}
-          {% if registry is defined %}
+          {% if reg_auth is defined %}
           imagePullSecrets:
             - name: {{ app_name }}-regcred
           {% endif %}

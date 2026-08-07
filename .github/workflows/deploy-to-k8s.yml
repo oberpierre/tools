@@ -83,14 +83,16 @@ jobs:
       - name: Deploy application to Kubernetes
         run: |
           cd tools/ansible
-          echo "${{ secrets.ansible_inventory_content }}" > inventory
+          echo "$ANSIBLE_INVENTORY_CONTENT" > inventory
           extra_vars_args=(--extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}")
           if [ -n "$ANSIBLE_EXTRA_VARS" ]; then
             printf '%s' "$ANSIBLE_EXTRA_VARS" > extra-vars.json
             extra_vars_args+=(--extra-vars "@extra-vars.json")
           fi
-          ansible-playbook ${{ inputs.playbook }} -i inventory "${extra_vars_args[@]}"
+          ansible-playbook "$PLAYBOOK" -i inventory "${extra_vars_args[@]}"
         env:
           CONTAINER_IMAGE: ${{ inputs.container_image }}
           REGISTRY_PASSWORD: ${{ secrets.registry_password }}
           ANSIBLE_EXTRA_VARS: ${{ secrets.ansible_extra_vars }}
+          ANSIBLE_INVENTORY_CONTENT: ${{ secrets.ansible_inventory_content }}
+          PLAYBOOK: ${{ inputs.playbook }}

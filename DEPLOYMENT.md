@@ -97,7 +97,7 @@ jobs:
 
 The Quick Start above deploys one Deployment behind one Ingress. Some applications are not shaped that way: a set of background workers and scheduled jobs that share a namespace and central datastores, none of which necessarily serve HTTP. For this shape, set the `playbook` input to `k8s_deploy_workloads.yml` instead of relying on the default.
 
-Like `k8s_deploy_app.yml`, this playbook creates a container registry pull secret named `{{ app_name }}-regcred` when the var file declares `registry` (see the Ansible Variables table below), and every workload's pod spec references it. It also runs [`roles/app_platform`](ansible/roles/app_platform) first, which registers the application's namespace, Postgres databases and Redis ACL users against the cluster's central Postgres and Redis instances (`k8s_deploy_postgresql.yml`, `k8s_deploy_redis.yml`), and writes their resulting credentials into namespace Secrets. None of that requires the calling pipeline to hold the datastores' admin credentials: the role reads those from the cluster itself.
+Like `k8s_deploy_app.yml`, this playbook creates a container registry pull secret named `{{ app_name }}-regcred` when the var file declares all three `registry` keys (see the Ansible Variables table below), and every workload's pod spec gets an `imagePullSecrets` entry pointing at it. Declaring only some of `registry.host`, `registry.username` and `registry.password` is rejected before anything is applied, naming the key that did not resolve. It also runs [`roles/app_platform`](ansible/roles/app_platform) first, which registers the application's namespace, Postgres databases and Redis ACL users against the cluster's central Postgres and Redis instances (`k8s_deploy_postgresql.yml`, `k8s_deploy_redis.yml`), and writes their resulting credentials into namespace Secrets. None of that requires the calling pipeline to hold the datastores' admin credentials: the role reads those from the cluster itself.
 
 ### 1. Prepare Your Variables File
 
@@ -107,7 +107,9 @@ app_name: my-app
 app_namespace: my-app
 
 # Optional. Registry authentication for private images, the same shape as the Quick
-# Start's registry block above. Every workload's pod spec gets an imagePullSecrets
+# Start's registry block above. All three keys are required together, or omit
+# registry entirely to deploy public images; declaring only some of them is rejected
+# before anything is applied. Every workload's pod spec gets an imagePullSecrets
 # entry pointing at the resulting Secret when this is declared.
 registry:
   host: ghcr.io
@@ -179,7 +181,7 @@ workloads:
 
 Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, a non-root pod `securityContext`, `restartPolicy: OnFailure` for CronJobs) is not settable per workload; these are the same for every workload this playbook deploys. `runAsNonRoot: true` means the container image must already run as a non-root user, or the pod fails to start.
 
-`app_db_password`, `app_redis_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path, only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay does not supply renders empty rather than undefined, since the var file references it directly; `roles/app_platform` rejects an empty password by name, which is what turns a missing overlay key into a readable failure rather than a silently blank credential.
+`app_db_password`, `app_redis_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path, only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay does not supply is undefined, not empty, so the run always fails; where it fails differs. A missing `worker_image`, `nightly_job_image`, `frontend_image` or `registry` key is caught by name in `pre_tasks:`, before anything is applied. A missing `app_db_password` or `app_redis_password` is instead caught while `roles/app_platform` runs, as a bare Jinja error naming the variable rather than the workload, because those are resolved as part of a loop list when that role's own tasks iterate over them.
 
 Beyond the service account rules shown in the Quick Start above, this path additionally needs:
 
@@ -190,7 +192,7 @@ sa_rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["create"]
@@ -200,7 +202,7 @@ sa_rules:
     verbs: ["get"]
 ```
 
-`cronjobs` and `pods` get/list back the wait after applying: the playbook waits for every Deployment to reach its declared `replicas` and confirms every CronJob exists, failing the pipeline while the registry token is still alive if either does not happen. `pods/exec` is `roles/app_platform` registering Postgres roles and Redis ACL users by executing into the central `postgresql-0` and `redis-master-0` pods in `data-services`; the two named `secrets` are those pods' admin credentials, read to authenticate as them.
+`cronjobs` covers creating, updating and applying the CronJob objects themselves; the wait after applying reads only Deployments, never Pods, so a CronJob's image is not checked before the schedule first fires it. `pods get` is `roles/app_platform`'s `k8s_exec`, which reads the pod object before opening a stream into the central `postgresql-0` or `redis-master-0` pod in `data-services`; `pods list` is needed by nothing here. The two named `secrets` are those pods' admin credentials, read to authenticate as them.
 
 ### 2. Use in your CI/CD pipeline
 
@@ -215,34 +217,41 @@ jobs:
       ansible_var_file: vars/my-app-workloads.yml
     secrets:
       ansible_inventory_content: ${{ secrets.ANSIBLE_INVENTORY }}
+      registry_password: ${{ secrets.MY_APP_REGISTRY_PASSWORD }}
       ssh_known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       ansible_extra_vars: ${{ secrets.MY_APP_EXTRA_VARS }}
 ```
 
-`MY_APP_EXTRA_VARS` is a single JSON secret carrying `app_db_password`, `app_redis_password`, `worker_image`, `nightly_job_image` and `frontend_image` (whatever your workloads and registrations reference): the values the committed var file cannot hold. Build it however suits your pipeline, for example a prior job's output assembled from repository secrets and the image references it just pushed.
+`registry_password` is the value the var file's `registry.password` (`lookup('ansible.builtin.env', 'REGISTRY_PASSWORD')`) resolves to. An unset optional secret evaluates to an empty string rather than making `REGISTRY_PASSWORD` undefined, and an empty string still satisfies `is defined`, so omitting this secret here is not caught by the pre_tasks check: it silently authenticates the pull as `<username>:` instead of failing the run. `MY_APP_EXTRA_VARS` is a single JSON secret carrying `app_db_password`, `app_redis_password`, `worker_image`, `nightly_job_image` and `frontend_image` (whatever your workloads and registrations reference): the values the committed var file cannot hold. Build it however suits your pipeline, for example a prior job's output assembled from repository secrets and the image references it just pushed.
 
 ## Configuration Options
 
 ### Ansible Variables
 
-| Variable              | Required | Description                                                                                              | Example                                                      |
-| --------------------- | -------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `app_name`            | X        | Application name (used for Kubernetes resources)                                                         | `my-app`                                                     |
-| `app_namespace`       | X        | Kubernetes namespace                                                                                     | `production`                                                 |
-| `app_folder`          | X        | Local manifest storage path. You may use a common parent folder like `apps` to group deployments.        | `apps/{{ app_name }}/`                                       |
-| `app_domains`         | X        | List of domains for ingress                                                                              | `["app.example.com"]`                                        |
-| `container_image`     | X        | Container image to deploy                                                                                | `ghcr.io/user/app:latest`                                    |
-| `container_port`      |          | Container port                                                                                           | Default: `8080`                                              |
-| `service_port`        |          | Service port                                                                                             | Default: `80`                                                |
-| `replicas`            |          | Number of replicas                                                                                       | Default: `1`                                                 |
-| `wait_for_deployment` |          | Whether to wait for the deployment to reach `READY` status before completing.                            | Default: `true`                                              |
-| `cluster_issuer_name` |          | cert-manager cluster issuer name                                                                         | Default: `letsencrypt-prod`                                  |
-| `registry.host`       |          | Package registry host. Required for private package registry authentication.                             | `ghcr.io`, `docker.io`, etc.                                 |
-| `registry.username`   |          | Username to authenticate against package registry. Required for private package registry authentication. | `user`                                                       |
-| `registry.password`   |          | Password to authenticate against package registry. Required for private package registry authentication. | `"{{ lookup('ansible.builtin.env', 'REGISTRY_PASSWORD') }}"` |
+| Variable              | Required | Path           | Description                                                                                                                                | Example                                                       |
+| --------------------- | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `app_name`            | X        | both           | Application name (used for Kubernetes resources)                                                                                           | `my-app`                                                      |
+| `app_namespace`       | X        | both           | Kubernetes namespace                                                                                                                       | `production`                                                  |
+| `app_folder`          | X        | single-app     | Local manifest storage path. You may use a common parent folder like `apps` to group deployments.                                          | `apps/{{ app_name }}/`                                        |
+| `app_domains`         | X        | single-app     | List of domains for ingress                                                                                                                | `["app.example.com"]`                                         |
+| `container_image`     | X        | single-app     | Container image to deploy                                                                                                                  | `ghcr.io/user/app:latest`                                     |
+| `container_port`      |          | single-app     | Container port                                                                                                                             | Default: `8080`                                               |
+| `service_port`        |          | single-app     | Service port                                                                                                                               | Default: `80`                                                 |
+| `replicas`            |          | single-app     | Number of replicas                                                                                                                         | Default: `1`                                                  |
+| `wait_for_deployment` |          | single-app     | Whether to wait for the deployment to reach `READY` status before completing.                                                              | Default: `true`                                               |
+| `cluster_issuer_name` |          | both           | cert-manager cluster issuer name                                                                                                           | Default: `letsencrypt-prod`                                   |
+| `registry.host`       |          | both           | Package registry host. Required together with `registry.username` and `registry.password`, or omit `registry` entirely for a public image. | `ghcr.io`, `docker.io`, etc.                                  |
+| `registry.username`   |          | both           | Username to authenticate against package registry. Required together with the other two `registry` keys.                                   | `user`                                                        |
+| `registry.password`   |          | both           | Password to authenticate against package registry. Required together with the other two `registry` keys.                                   | `"{{ lookup('ansible.builtin.env', 'REGISTRY_PASSWORD') }}"`  |
+| `postgres_databases`  |          | multi-workload | Postgres roles and databases to register against the cluster's central instance.                                                           | See [Multi-Workload Deployments](#multi-workload-deployments) |
+| `redis_users`         |          | multi-workload | Redis ACL users to register against the cluster's central instance.                                                                        | See [Multi-Workload Deployments](#multi-workload-deployments) |
+| `app_secrets`         |          | multi-workload | Secrets written into `app_namespace`, one per top-level key.                                                                               | See [Multi-Workload Deployments](#multi-workload-deployments) |
+| `workloads`           | X        | multi-workload | One entry per Deployment or CronJob to deploy.                                                                                             | See [Multi-Workload Deployments](#multi-workload-deployments) |
 
-> **Note**: Do not directly specify secrets in your var file. Use the `REGISTRY_PASSWORD` environment variable like above.
+> **Note**: Do not directly specify secrets in your var file. Use the `REGISTRY_PASSWORD` environment variable like above for the single-app path, or the `ansible_extra_vars` overlay for the multi-workload path (see [Secrets](#secrets) below).
+>
+> **Note**: `registry.host`, `registry.username` and `registry.password` are required together; declaring only some of them is rejected before anything is applied.
 
 ### Workflow Variables
 
