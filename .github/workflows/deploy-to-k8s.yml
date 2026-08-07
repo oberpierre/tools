@@ -84,7 +84,7 @@ jobs:
         run: |
           cd tools/ansible
           echo "$ANSIBLE_INVENTORY_CONTENT" > inventory
-          extra_vars_args=(--extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}")
+          extra_vars_args=(--extra-vars "@$ANSIBLE_VAR_FILE_PATH")
           if [ -n "$ANSIBLE_EXTRA_VARS" ]; then
             printf '%s' "$ANSIBLE_EXTRA_VARS" > extra-vars.json
             extra_vars_args+=(--extra-vars "@extra-vars.json")
@@ -95,4 +95,5 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.registry_password }}
           ANSIBLE_EXTRA_VARS: ${{ secrets.ansible_extra_vars }}
           ANSIBLE_INVENTORY_CONTENT: ${{ secrets.ansible_inventory_content }}
+          ANSIBLE_VAR_FILE_PATH: ${{ github.workspace }}/app/${{ inputs.ansible_var_file }}
           PLAYBOOK: ${{ inputs.playbook }}
