@@ -43,6 +43,10 @@ spec:
           resources:
             {{ workload.resources | to_nice_yaml(indent=2) | indent(12) }}
           {% endif %}
+      {% if registry is defined %}
+      imagePullSecrets:
+        - name: {{ app_name }}-regcred
+      {% endif %}
 {% elif workload.kind == "CronJob" %}
 apiVersion: batch/v1
 kind: CronJob
@@ -80,6 +84,10 @@ spec:
               resources:
                 {{ workload.resources | to_nice_yaml(indent=2) | indent(16) }}
               {% endif %}
+          {% if registry is defined %}
+          imagePullSecrets:
+            - name: {{ app_name }}-regcred
+          {% endif %}
 {% endif %}
 {% if workload.service is defined %}
 ---

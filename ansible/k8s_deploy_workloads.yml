@@ -2,12 +2,46 @@
 - name: Deploying application workloads to Kubernetes
   hosts: all
 
-  roles:
-    # Registers the namespace, Postgres and Redis credentials, and app Secrets the
-    # workloads below assume already exist before their envFrom can resolve.
-    - app_platform
+  # Runs before roles:, so a malformed var file is rejected before app_platform's
+  # registrations (Postgres role/password, Redis ACL) have any side effect on the
+  # cluster: the deploy refuses the file outright rather than half-honouring it.
+  pre_tasks:
+    - name: Rejecting a var file that declares no workloads
+      ansible.builtin.assert:
+        that:
+          - workloads is defined
+          - workloads | length > 0
+        fail_msg: >-
+          No workloads declared. This playbook deploys the workloads a var file
+          names, so add at least one entry to workloads before running it.
+        quiet: true
 
-  tasks:
+    - name: Rejecting a workload with an unrecognised kind
+      ansible.builtin.assert:
+        that:
+          - (item.kind | default('')) in ['Deployment', 'CronJob']
+        fail_msg: >-
+          workloads entry {{ item.name | default('(unnamed)') }} declares kind
+          {{ item.kind | default('(unset)') }}, which this platform does not render.
+          Declare kind as Deployment or CronJob.
+        quiet: true
+      loop: "{{ workloads }}"
+      loop_control:
+        label: "{{ item.name | default('(unnamed)') }}"
+
+    - name: Rejecting a CronJob that declares service or ingress
+      ansible.builtin.assert:
+        that:
+          - not ((item.kind | default('')) == 'CronJob' and (item.service is defined or item.ingress is defined))
+        fail_msg: >-
+          workloads entry {{ item.name | default('(unnamed)') }} is a CronJob
+          declaring service or ingress. A scheduled job has no continuously running
+          pod for a Service to select; drop service and ingress from this entry.
+        quiet: true
+      loop: "{{ workloads }}"
+      loop_control:
+        label: "{{ item.name | default('(unnamed)') }}"
+
     - name: Rejecting a workload that declares ingress without service
       ansible.builtin.assert:
         that:
@@ -21,6 +55,43 @@
       loop: "{{ workloads }}"
       loop_control:
         label: "{{ item.name | default('(unnamed)') }}"
+
+  roles:
+    # Registers the namespace, Postgres and Redis credentials, and app Secrets the
+    # workloads below assume already exist before their envFrom can resolve.
+    - app_platform
+
+  tasks:
+    # Mirrors k8s_deploy_app.yml's registry auth secret. Without it, an application
+    # whose images are private goes ImagePullBackOff on every workload below while the
+    # apply itself still succeeds.
+    - name: Create dockerconfigjson content for registry authentication
+      ansible.builtin.set_fact:
+        reg_auth_string: "{{ (registry.username + ':' + registry.password) | b64encode }}"
+      when: registry is defined and registry.host is defined and registry.username is defined and registry.password is defined
+      no_log: true
+
+    - name: Build registry auth structure
+      ansible.builtin.set_fact:
+        reg_auth:
+          auths: "{{ {registry.host: {'auth': reg_auth_string}} }}"
+      when: reg_auth_string is defined
+      no_log: true
+
+    - name: Create container registry secret for authentication
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ app_name }}-regcred"
+            namespace: "{{ app_namespace }}"
+          type: kubernetes.io/dockerconfigjson
+          data:
+            .dockerconfigjson: "{{ reg_auth | to_json | b64encode }}"
+      when: reg_auth is defined
+      no_log: true
 
     - name: Create app directory for manifests
       ansible.builtin.file:
@@ -41,3 +112,33 @@
       kubernetes.core.k8s:
         state: present
         src: "{{ workloads_manifest.dest }}"
+
+    # No failed_when here: a wait that cannot succeed fails the task on its own,
+    # which is what turns a bad pull red while the registry token is still alive.
+    - name: Waiting for Deployments to reach declared replicas
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ item.name }}"
+        namespace: "{{ app_namespace }}"
+      register: workload_deployment_status
+      until:
+        - workload_deployment_status.resources | length > 0
+        - workload_deployment_status.resources[0].status.readyReplicas | default(0) == (item.replicas | default(1))
+      retries: 10
+      delay: 15
+      loop: "{{ workloads | selectattr('kind', 'equalto', 'Deployment') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Confirming CronJobs exist
+      kubernetes.core.k8s_info:
+        api_version: batch/v1
+        kind: CronJob
+        name: "{{ item.name }}"
+        namespace: "{{ app_namespace }}"
+      register: workload_cronjob_status
+      failed_when: workload_cronjob_status.resources | length == 0
+      loop: "{{ workloads | selectattr('kind', 'equalto', 'CronJob') | list }}"
+      loop_control:
+        label: "{{ item.name }}"

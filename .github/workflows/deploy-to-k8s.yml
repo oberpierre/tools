@@ -28,6 +28,9 @@ on:
       ssh_private_key:
         description: "SSH private key for accessing the deployment target."
         required: false
+      ansible_extra_vars:
+        description: "JSON object of Ansible variables. Written to a file and passed as a second --extra-vars after ansible_var_file."
+        required: false
 
 jobs:
   deploy:
@@ -81,8 +84,12 @@ jobs:
         run: |
           cd tools/ansible
           echo "${{ secrets.ansible_inventory_content }}" > inventory
-          ansible-playbook ${{ inputs.playbook }} -i inventory \
-            --extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}"
+          extra_vars_args=(--extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}")
+          if [ -n "${{ secrets.ansible_extra_vars }}" ]; then
+            echo "${{ secrets.ansible_extra_vars }}" > extra-vars.json
+            extra_vars_args+=(--extra-vars "@extra-vars.json")
+          fi
+          ansible-playbook ${{ inputs.playbook }} -i inventory "${extra_vars_args[@]}"
         env:
           CONTAINER_IMAGE: ${{ inputs.container_image }}
           REGISTRY_PASSWORD: ${{ secrets.registry_password }}

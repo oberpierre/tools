@@ -97,7 +97,7 @@ jobs:
 
 The Quick Start above deploys one Deployment behind one Ingress. Some applications are not shaped that way: a set of background workers and scheduled jobs that share a namespace and central datastores, none of which necessarily serve HTTP. For this shape, set the `playbook` input to `k8s_deploy_workloads.yml` instead of relying on the default.
 
-Unlike `k8s_deploy_app.yml`, this playbook does not create a container registry pull secret, so it expects images pullable without one (e.g. public, or already present on the node). It also runs [`roles/app_platform`](ansible/roles/app_platform) first, which registers the application's namespace, Postgres databases and Redis ACL users against the cluster's central Postgres and Redis instances (`k8s_deploy_postgresql.yml`, `k8s_deploy_redis.yml`), and writes their resulting credentials into namespace Secrets. None of that requires the calling pipeline to hold the datastores' admin credentials: the role reads those from the cluster itself.
+Like `k8s_deploy_app.yml`, this playbook creates a container registry pull secret named `{{ app_name }}-regcred` when the var file declares `registry` (see the Ansible Variables table below), and every workload's pod spec references it. It also runs [`roles/app_platform`](ansible/roles/app_platform) first, which registers the application's namespace, Postgres databases and Redis ACL users against the cluster's central Postgres and Redis instances (`k8s_deploy_postgresql.yml`, `k8s_deploy_redis.yml`), and writes their resulting credentials into namespace Secrets. None of that requires the calling pipeline to hold the datastores' admin credentials: the role reads those from the cluster itself.
 
 ### 1. Prepare Your Variables File
 
@@ -106,12 +106,20 @@ Unlike `k8s_deploy_app.yml`, this playbook does not create a container registry 
 app_name: my-app
 app_namespace: my-app
 
+# Optional. Registry authentication for private images, the same shape as the Quick
+# Start's registry block above. Every workload's pod spec gets an imagePullSecrets
+# entry pointing at the resulting Secret when this is declared.
+registry:
+  host: ghcr.io
+  username: my-app-bot
+  password: "{{ lookup('ansible.builtin.env', 'REGISTRY_PASSWORD') }}"
+
 # Optional. Each entry registers a role and database against the cluster's central
 # PostgreSQL instance, creating either if missing and always (re)setting the password.
 postgres_databases:
   - name: my_app_db
     user: my_app
-    password: "{{ lookup('env', 'APP_DB_PASSWORD') }}"
+    password: "{{ app_db_password }}"
 
 # Optional. Each entry registers an ACL user against the cluster's central Redis
 # instance. `acl` is the raw ACL rule string this application needs (key patterns and
@@ -119,7 +127,7 @@ postgres_databases:
 # must not be "default" and the password must not be empty.
 redis_users:
   - name: my-app
-    password: "{{ lookup('env', 'APP_REDIS_PASSWORD') }}"
+    password: "{{ app_redis_password }}"
     acl: "~my-app:* +@read +@write +@connection"
 
 # Optional. Written as Secrets into app_namespace, one Secret per top-level key. Each
@@ -131,18 +139,18 @@ app_secrets:
     POSTGRES_PORT: "5432"
     POSTGRES_DB: my_app_db
     POSTGRES_USER: my_app
-    POSTGRES_PASSWORD: "{{ lookup('env', 'APP_DB_PASSWORD') }}"
+    POSTGRES_PASSWORD: "{{ app_db_password }}"
   my-app-redis:
     REDIS_HOST: redis-master.data-services.svc.cluster.local
     REDIS_PORT: "6379"
     REDIS_USERNAME: my-app # must match a redis_users name above
-    REDIS_PASSWORD: "{{ lookup('env', 'APP_REDIS_PASSWORD') }}"
+    REDIS_PASSWORD: "{{ app_redis_password }}"
 
 # Required. One entry per Deployment or CronJob to deploy.
 workloads:
   - name: worker
     kind: Deployment # Deployment | CronJob
-    image: "{{ lookup('env', 'WORKER_IMAGE') }}"
+    image: "{{ worker_image }}"
     replicas: 1
     env_from: [my-app-postgres, my-app-redis] # Secret names above, applied as envFrom
     resources:
@@ -152,15 +160,17 @@ workloads:
   - name: nightly-job
     kind: CronJob
     schedule: "0 3 * * *" # standard cron syntax
-    image: "{{ lookup('env', 'NIGHTLY_JOB_IMAGE') }}"
+    image: "{{ nightly_job_image }}"
     env_from: [my-app-postgres]
   - name: frontend
     kind: Deployment
-    image: "{{ lookup('env', 'FRONTEND_IMAGE') }}"
+    image: "{{ frontend_image }}"
     replicas: 2
     env_from: [my-app-postgres]
     # A workload with `service` but no `ingress` gets a ClusterIP Service only. Both
-    # together get a Service plus an Ingress with a cert-manager-issued TLS certificate.
+    # together get a Service plus an Ingress with a cert-manager-issued TLS certificate,
+    # honoring the same cluster_issuer_name variable as the Quick Start above (default
+    # letsencrypt-prod; see the Ansible Variables table below).
     service:
       port: 8000
     ingress:
@@ -168,6 +178,29 @@ workloads:
 ```
 
 Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, a non-root pod `securityContext`, `restartPolicy: OnFailure` for CronJobs) is not settable per workload; these are the same for every workload this playbook deploys. `runAsNonRoot: true` means the container image must already run as a non-root user, or the pod fails to start.
+
+`app_db_password`, `app_redis_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path, only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay does not supply renders empty rather than undefined, since the var file references it directly; `roles/app_platform` rejects an empty password by name, which is what turns a missing overlay key into a readable failure rather than a silently blank credential.
+
+Beyond the service account rules shown in the Quick Start above, this path additionally needs:
+
+```yaml
+sa_rules:
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["postgresql-credentials", "redis-credentials"]
+    verbs: ["get"]
+```
+
+`cronjobs` and `pods` get/list back the wait after applying: the playbook waits for every Deployment to reach its declared `replicas` and confirms every CronJob exists, failing the pipeline while the registry token is still alive if either does not happen. `pods/exec` is `roles/app_platform` registering Postgres roles and Redis ACL users by executing into the central `postgresql-0` and `redis-master-0` pods in `data-services`; the two named `secrets` are those pods' admin credentials, read to authenticate as them.
 
 ### 2. Use in your CI/CD pipeline
 
@@ -184,9 +217,10 @@ jobs:
       ansible_inventory_content: ${{ secrets.ANSIBLE_INVENTORY }}
       ssh_known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      ansible_extra_vars: ${{ secrets.MY_APP_EXTRA_VARS }}
 ```
 
-Set `WORKER_IMAGE`, `NIGHTLY_JOB_IMAGE`, `FRONTEND_IMAGE`, `APP_DB_PASSWORD` and `APP_REDIS_PASSWORD` (whatever your workloads and registrations reference) as environment variables on the job, the same way `container_image` and `REGISTRY_PASSWORD` work in the Quick Start above.
+`MY_APP_EXTRA_VARS` is a single JSON secret carrying `app_db_password`, `app_redis_password`, `worker_image`, `nightly_job_image` and `frontend_image` (whatever your workloads and registrations reference): the values the committed var file cannot hold. Build it however suits your pipeline, for example a prior job's output assembled from repository secrets and the image references it just pushed.
 
 ## Configuration Options
 
@@ -224,9 +258,10 @@ See also [Workflow](.github/workflows/deploy-to-k8s.yml) inputs/secrets section.
 
 #### Secrets
 
-| Variable                  | Required | Description                                                                                                                             | Example                                                                                                                                           |
-| ------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ansible_inventory_content | X        | Content of the Ansible inventory file to use for deployment.                                                                            | `cluster.example.com ansible_user=deploy`                                                                                                         |
-| registry_password         |          | Password for the container registry. May be a personal access token, GITHUB_TOKEN, or password. GITHUB_TOKEN is recommended for ghcr.io | `${{ secrets.GITHUB_TOKEN }}`                                                                                                                     |
-| ssh_known_hosts           |          | SSH known hosts content for secure connections.                                                                                         | Content of the known_hosts file, i.e. generated by `ssh-keyscan cluster.example.com > my_known_hosts`                                             |
-| ssh_private_key           |          | SSH private key for accessing the deployment target.                                                                                    | SSH private key compatible with `webfactory/ssh-agent` action, see [Creating SSH Keys](https://github.com/webfactory/ssh-agent#creating-ssh-keys) |
+| Variable                  | Required | Description                                                                                                                                                                                                                                         | Example                                                                                                                                           |
+| ------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ansible_inventory_content | X        | Content of the Ansible inventory file to use for deployment.                                                                                                                                                                                        | `cluster.example.com ansible_user=deploy`                                                                                                         |
+| registry_password         |          | Password for the container registry. May be a personal access token, GITHUB_TOKEN, or password. GITHUB_TOKEN is recommended for ghcr.io                                                                                                             | `${{ secrets.GITHUB_TOKEN }}`                                                                                                                     |
+| ssh_known_hosts           |          | SSH known hosts content for secure connections.                                                                                                                                                                                                     | Content of the known_hosts file, i.e. generated by `ssh-keyscan cluster.example.com > my_known_hosts`                                             |
+| ssh_private_key           |          | SSH private key for accessing the deployment target.                                                                                                                                                                                                | SSH private key compatible with `webfactory/ssh-agent` action, see [Creating SSH Keys](https://github.com/webfactory/ssh-agent#creating-ssh-keys) |
+| ansible_extra_vars        |          | Optional JSON object of additional Ansible variables, written to a file and passed as a second `--extra-vars` after `ansible_var_file`. Outranks the committed var file wherever both define a key. Never put secrets in `ansible_var_file` itself. | `${{ secrets.MY_APP_EXTRA_VARS }}`                                                                                                                |
