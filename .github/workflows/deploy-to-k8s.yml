@@ -78,7 +78,9 @@ jobs:
       - name: Configure known_hosts
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.ssh_known_hosts }}" >> ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.ssh_known_hosts }}
 
       - name: Deploy application to Kubernetes
         run: |
