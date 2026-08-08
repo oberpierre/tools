@@ -16,57 +16,69 @@
           names, so add at least one entry to workloads before running it.
         quiet: true
 
+    # Looping the raw workloads list templates every nested value eagerly, including
+    # a field an overlay never supplied, so the loop itself raises before any of
+    # these asserts gets a chance to run and name the entry. Looping the index
+    # instead only templates the length, so workloads[item] resolves one attribute
+    # at a time and each entry is still checked by name even when a field on it is
+    # exactly what is missing.
     - name: Rejecting a workload with an unrecognised kind
       ansible.builtin.assert:
         that:
-          - (item.kind | default('')) in ['Deployment', 'CronJob']
+          - (workloads[item].kind | default('')) in ['Deployment', 'CronJob']
         fail_msg: >-
-          workloads entry {{ item.name | default('(unnamed)') }} declares kind
-          {{ item.kind | default('(unset)') }}, which this platform does not render.
-          Declare kind as Deployment or CronJob.
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+          kind {{ workloads[item].kind | default('(unset)') }}, which this platform
+          does not render. Declare kind as Deployment or CronJob.
         quiet: true
-      loop: "{{ workloads }}"
+      loop: "{{ range(workloads | length) | list }}"
       loop_control:
-        label: "{{ item.name | default('(unnamed)') }}"
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
 
     - name: Rejecting a CronJob that declares service or ingress
       ansible.builtin.assert:
         that:
-          - not ((item.kind | default('')) == 'CronJob' and (item.service is defined or item.ingress is defined))
+          - not ((workloads[item].kind | default('')) == 'CronJob' and (workloads[item].service is defined or workloads[item].ingress is defined))
         fail_msg: >-
-          workloads entry {{ item.name | default('(unnamed)') }} is a CronJob
-          declaring service or ingress. A scheduled job has no continuously running
-          pod for a Service to select; drop service and ingress from this entry.
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} is a
+          CronJob declaring service or ingress. A scheduled job has no continuously
+          running pod for a Service to select; drop service and ingress from this
+          entry.
         quiet: true
-      loop: "{{ workloads }}"
+      loop: "{{ range(workloads | length) | list }}"
       loop_control:
-        label: "{{ item.name | default('(unnamed)') }}"
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
 
     - name: Rejecting a workload that declares ingress without service
       ansible.builtin.assert:
         that:
-          - not (item.ingress is defined and item.service is not defined)
+          - not (workloads[item].ingress is defined and workloads[item].service is not defined)
         fail_msg: >-
-          workloads entry {{ item.name | default('(unnamed)') }} declares ingress
-          without service. An Ingress needs a backend Service and port to attach to,
-          so declare service (with the port to expose) alongside ingress, or drop
-          ingress if this workload should not be reachable from outside the cluster.
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+          ingress without service. An Ingress needs a backend Service and port to
+          attach to, so declare service (with the port to expose) alongside ingress,
+          or drop ingress if this workload should not be reachable from outside the
+          cluster.
         quiet: true
-      loop: "{{ workloads }}"
+      loop: "{{ range(workloads | length) | list }}"
       loop_control:
-        label: "{{ item.name | default('(unnamed)') }}"
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
 
-    # registry[item] is defined is false both when the key is absent from the block
-    # and when it is present but its value is an overlay variable the caller never
-    # supplied, so this catches a partial block regardless of which way it is partial.
+    # (registry[item] | default('') | trim) is empty in three cases this treats the
+    # same: the key is absent from the block, it is present but its value is an
+    # overlay variable the caller never supplied, or the caller supplied it as an
+    # empty string, which is what an unset optional secret resolves to. `is defined`
+    # alone only catches the first two: an empty string is still defined, so it would
+    # pass straight through into the pull Secret and fail only at pull time.
     - name: Rejecting a registry block missing a required key
       ansible.builtin.assert:
         that:
-          - registry[item] is defined
+          - (registry[item] | default('') | trim) != ''
         fail_msg: >-
-          registry.{{ item }} does not resolve. registry.host, registry.username and
-          registry.password are required together; omit registry entirely to deploy
-          public images rather than leaving it partially filled in.
+          registry.{{ item }} does not resolve to a non-empty value. registry.host,
+          registry.username and registry.password are required together; omit
+          registry entirely to deploy public images rather than leaving it partially
+          filled in.
         quiet: true
       when: registry is defined
       loop: ["host", "username", "password"]
@@ -77,18 +89,20 @@
     # only when the manifest template renders, after roles: has already rotated the
     # Postgres password and ACL SAVEd the Redis users, so an image the overlay forgot
     # would otherwise surface as a half-honoured var file instead of a clean refusal.
+    # The trim guard is the same one above: an empty image string is defined but
+    # still not something any registry can pull.
     - name: Rejecting a workload whose image the overlay did not supply
       ansible.builtin.assert:
         that:
-          - item.image is defined
+          - (workloads[item].image | default('') | trim) != ''
         fail_msg: >-
-          workloads entry {{ item.name | default('(unnamed)') }} references an image
-          that does not resolve. Supply its value through ansible_extra_vars before
-          running this playbook.
+          workloads entry {{ workloads[item].name | default('(unnamed)') }}
+          references an image that does not resolve to a non-empty value. Supply its
+          value through ansible_extra_vars before running this playbook.
         quiet: true
-      loop: "{{ workloads }}"
+      loop: "{{ range(workloads | length) | list }}"
       loop_control:
-        label: "{{ item.name | default('(unnamed)') }}"
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
 
   roles:
     # Registers the namespace, Postgres and Redis credentials, and app Secrets the
