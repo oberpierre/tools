@@ -64,16 +64,21 @@
       loop_control:
         label: "{{ workloads[item].name | default('(unnamed)') }}"
 
-    # (registry[item] | default('') | trim) is empty in three cases this treats the
-    # same: the key is absent from the block, it is present but its value is an
-    # overlay variable the caller never supplied, or the caller supplied it as an
-    # empty string, which is what an unset optional secret resolves to. `is defined`
-    # alone only catches the first two: an empty string is still defined, so it would
-    # pass straight through into the pull Secret and fail only at pull time.
+    # (registry[item] | default('', true) | trim) is empty in four cases this treats
+    # the same: the key is absent from the block, it is present but its value is an
+    # overlay variable the caller never supplied, the caller supplied it as an empty
+    # string (what an unset optional secret resolves to), or the caller supplied it as
+    # an explicit null (what a YAML key written with nothing after the colon parses
+    # to). `is defined` alone only catches the first two: an empty string is still
+    # defined, so it would pass straight through into the pull Secret and fail only at
+    # pull time. The bare one-argument default('') only catches undefined: an explicit
+    # null is already defined, so it passes through and trim coerces it to the
+    # non-empty string "None". The second default() argument, true, additionally
+    # substitutes for any falsy value, which null is.
     - name: Rejecting a registry block missing a required key
       ansible.builtin.assert:
         that:
-          - (registry[item] | default('') | trim) != ''
+          - (registry[item] | default('', true) | trim) != ''
         fail_msg: >-
           registry.{{ item }} does not resolve to a non-empty value. registry.host,
           registry.username and registry.password are required together; omit
@@ -89,12 +94,12 @@
     # only when the manifest template renders, after roles: has already rotated the
     # Postgres password and ACL SAVEd the Redis users, so an image the overlay forgot
     # would otherwise surface as a half-honoured var file instead of a clean refusal.
-    # The trim guard is the same one above: an empty image string is defined but
-    # still not something any registry can pull.
+    # The trim guard is the same one above: an empty or null image resolves to a
+    # string, defined either way, but still not something any registry can pull.
     - name: Rejecting a workload whose image the overlay did not supply
       ansible.builtin.assert:
         that:
-          - (workloads[item].image | default('') | trim) != ''
+          - (workloads[item].image | default('', true) | trim) != ''
         fail_msg: >-
           workloads entry {{ workloads[item].name | default('(unnamed)') }}
           references an image that does not resolve to a non-empty value. Supply its
