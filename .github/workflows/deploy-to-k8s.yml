@@ -85,7 +85,8 @@ jobs:
       - name: Deploy application to Kubernetes
         run: |
           cd tools/ansible
-          echo "$ANSIBLE_INVENTORY_CONTENT" > inventory
+          umask 077
+          printf '%s\n' "$ANSIBLE_INVENTORY_CONTENT" > inventory
           extra_vars_args=(--extra-vars "@$ANSIBLE_VAR_FILE_PATH")
           if [ -n "$ANSIBLE_EXTRA_VARS" ]; then
             printf '%s' "$ANSIBLE_EXTRA_VARS" > extra-vars.json

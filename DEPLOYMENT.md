@@ -198,14 +198,14 @@ sa_rules:
     verbs: ["get"]
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["get"]
+    verbs: ["get", "create"]
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames: ["postgresql-credentials", "redis-credentials"]
     verbs: ["get"]
 ```
 
-`cronjobs` covers creating, updating and applying the CronJob objects themselves; the wait after applying reads only Deployments, never Pods, so a CronJob's image is not checked before the schedule first fires it. `pods/exec` needs `get`, not `create`: `k8s_exec` calls the API's `connect_get_namespaced_pod_exec` endpoint, a GET, and Kubernetes derives the subresource verb from the HTTP method rather than from what the call does. `pods get` is not exercised by anything in `roles/app_platform` today: `k8s_exec` only reads the pod itself when its caller omits `container:`, and every call here sets it explicitly. The grant stays for a future `k8s_exec` call that does not. The two named `secrets` are those pods' admin credentials, read to authenticate as them.
+`cronjobs` covers creating, updating and applying the CronJob objects themselves; the wait after applying reads only Deployments, never Pods, so a CronJob's image is not checked before the schedule first fires it. `pods/exec` grants both `get` and `create` because Kubernetes derives the subresource verb from the HTTP method, and this repo drives pods through two different clients that use different methods for the same action: `kubernetes.core.k8s_exec` calls the API's `connect_get_namespaced_pod_exec` endpoint, a GET, so it needs `get`; `kubectl exec`, which the backup-verify CronJob script uses (`ansible/k8s_setup_backup_verify.yml`), POSTs to the same endpoint and needs `create`. Both verbs reach the same capability, so granting both adds no privilege beyond granting either alone, and it means this guidance still holds if a future call switches which client it uses. `pods get` is not exercised by anything in `roles/app_platform` today: `k8s_exec` only reads the pod itself when its caller omits `container:`, and every call here sets it explicitly. The grant stays for a future `k8s_exec` call that does not. The two named `secrets` are those pods' admin credentials, read to authenticate as them.
 
 ### 2. Use in your CI/CD pipeline
 

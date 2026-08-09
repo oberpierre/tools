@@ -16,6 +16,24 @@
           names, so add at least one entry to workloads before running it.
         quiet: true
 
+    # Runs ahead of the checks below because name is what this one is testing: a
+    # missing name cannot appear in its own fail_msg, so this reports the position in
+    # workloads instead. Once a var file passes this, the default('(unnamed)')
+    # fallback in the messages below never actually fires.
+    - name: Rejecting a workload with no name
+      ansible.builtin.assert:
+        that:
+          - (workloads[item].name | default('', true) | trim) != ''
+        fail_msg: >-
+          workloads entry at position {{ item }} has no name. name is the resource
+          name, the label selector, and the stem of the derived <name>-svc,
+          <name>-ingress and <name>-cert; a missing or empty one renders objects the
+          API rejects.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "position {{ item }}"
+
     # Looping the raw workloads list templates every nested value eagerly, including
     # a field an overlay never supplied, so the loop itself raises before any of
     # these asserts gets a chance to run and name the entry. Looping the index
@@ -49,6 +67,23 @@
       loop_control:
         label: "{{ workloads[item].name | default('(unnamed)') }}"
 
+    # templates/workloads.j2 reads workload.schedule with no default, and the API
+    # requires it on a CronJob. Catching it here means a missing schedule surfaces
+    # before roles: rotates the Postgres password and ACL SAVEs the Redis users,
+    # instead of at template render after those side effects are already done.
+    - name: Rejecting a CronJob with no schedule
+      ansible.builtin.assert:
+        that:
+          - not ((workloads[item].kind | default('')) == 'CronJob' and (workloads[item].schedule | default('', true) | trim) == '')
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} is a
+          CronJob declaring no schedule. templates/workloads.j2 requires schedule to
+          render a CronJob; declare a non-empty schedule for this entry.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
     - name: Rejecting a workload that declares ingress without service
       ansible.builtin.assert:
         that:
@@ -59,6 +94,24 @@
           attach to, so declare service (with the port to expose) alongside ingress,
           or drop ingress if this workload should not be reachable from outside the
           cluster.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
+    # service and ingress are each optional, so a workload declaring neither must
+    # pass both conditions below without either one applying. Depth matches the
+    # checks above: presence and non-emptiness, not port ranges or hostname syntax.
+    - name: Rejecting a declared service with no port or ingress with no hosts
+      ansible.builtin.assert:
+        that:
+          - not (workloads[item].service is defined and (workloads[item].service.port | default('', true) | trim) == '')
+          - not (workloads[item].ingress is defined and (workloads[item].ingress.hosts | default([], true) | length) == 0)
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+          service with no non-empty port, or ingress with no non-empty hosts list.
+          service.port and ingress.hosts are both required when service or ingress is
+          declared.
         quiet: true
       loop: "{{ range(workloads | length) | list }}"
       loop_control:
