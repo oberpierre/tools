@@ -106,13 +106,16 @@
       ansible.builtin.assert:
         that:
           - not (workloads[item].service is defined and (workloads[item].service.port | default('', true) | trim) == '')
-          - not (workloads[item].ingress is defined and (workloads[item].ingress.hosts | default([], true) | length) == 0)
+          - not (workloads[item].ingress is defined and not (ingress_hosts is sequence and ingress_hosts is not string and ingress_hosts | length > 0))
         fail_msg: >-
           workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
           service with no non-empty port, or ingress with no non-empty hosts list.
           service.port and ingress.hosts are both required when service or ingress is
-          declared.
+          declared; hosts must be a list even for a single host, e.g. hosts: [app.example.com],
+          not a bare string.
         quiet: true
+      vars:
+        ingress_hosts: "{{ workloads[item].ingress.hosts | default([], true) }}"
       loop: "{{ range(workloads | length) | list }}"
       loop_control:
         label: "{{ workloads[item].name | default('(unnamed)') }}"
