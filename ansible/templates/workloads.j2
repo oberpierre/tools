@@ -30,7 +30,7 @@ spec:
           imagePullPolicy: IfNotPresent
           {% if workload.service is defined %}
           ports:
-            - containerPort: {{ workload.service.port }}
+            - containerPort: {{ workload.service.target_port | default(workload.service.port) }}
           {% endif %}
           {% if workload.env_from is defined and workload.env_from | length > 0 %}
           envFrom:
@@ -107,7 +107,7 @@ spec:
   ports:
     - protocol: TCP
       port: {{ workload.service.port }}
-      targetPort: {{ workload.service.port }}
+      targetPort: {{ workload.service.target_port | default(workload.service.port) }}
 {% endif %}
 {% if workload.ingress is defined and workload.service is defined %}
 ---
