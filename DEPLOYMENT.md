@@ -205,7 +205,15 @@ sa_rules:
     verbs: ["get"]
 ```
 
-`cronjobs` covers creating, updating and applying the CronJob objects themselves; the wait after applying reads only Deployments, never Pods, so a CronJob's image is not checked before the schedule first fires it. `pods/exec` grants only `get` because Kubernetes derives the subresource verb from the HTTP method, and this identity, the one driven from CI through this workflow, execs a pod in exactly one way: `kubernetes.core.k8s_exec`, which calls the API's `connect_get_namespaced_pod_exec` endpoint, a GET. `pods get` is not exercised by anything in `roles/app_platform` today: `k8s_exec` only reads the pod itself when its caller omits `container:`, and every call here sets it explicitly. The grant stays for a future `k8s_exec` call that does not. The two named `secrets` are those pods' admin credentials, read to authenticate as them. The backup-verify CronJob (`ansible/k8s_setup_backup_verify.yml`) also execs into a pod, but through `kubectl exec`, which POSTs to the same endpoint and needs `create`; that script runs under its own ServiceAccount in `backups_namespace` (`ansible/templates/verify_cronjob.j2` sets `serviceAccountName: {{ verify_service_account }}`), a different identity with a Role of its own, not this one. Two identities, two clients, two correct verbs: `create` there is privilege this credential would never use.
+`cronjobs` covers creating, updating and applying the CronJob objects themselves; the wait after applying reads only Deployments, never Pods, so a CronJob's image is not checked before the schedule first fires it.
+
+Kubernetes derives a subresource's RBAC verb from the HTTP method: a client that GETs needs `get`, and one that POSTs needs `create`. This path execs a pod in exactly one way, `kubernetes.core.k8s_exec`, which GETs, so `pods/exec` here needs only `get`. `kubectl exec` POSTs to the same endpoint and needs `create`; that is why the backup-verify CronJob's own Role (`ansible/k8s_setup_backup_verify.yml`) grants `create` instead, for a different ServiceAccount in `backups_namespace` (`ansible/templates/verify_cronjob.j2` sets `serviceAccountName: {{ verify_service_account }}`), a different identity with a Role of its own, not this one.
+
+To check the grant: `kubectl auth can-i get pods/exec -n <namespace> --as=<service account>`. If exec starts returning 403 despite this grant, the client changed which HTTP method it uses, and the fix is to add `create`.
+
+`pods get` is not exercised by anything in `roles/app_platform` today: `k8s_exec` only reads the pod itself when its caller omits `container:`, and every call here sets it explicitly. The grant stays for a future `k8s_exec` call that does not.
+
+The two named `secrets` are those pods' admin credentials, read to authenticate as them.
 
 ### 2. Use in your CI/CD pipeline
 
