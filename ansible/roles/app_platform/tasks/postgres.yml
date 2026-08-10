@@ -55,7 +55,7 @@
       Postgres role creation failed for {{ postgres_databases[item].user }}
       (transport rc={{ app_platform_postgres_role_result.results[item].rc | default('n/a') }}):
       {{ app_platform_postgres_role_result.results[item].stderr |
-      default(app_platform_postgres_role_result.results[item].msg) | default('no output', true) }}
+      default(app_platform_postgres_role_result.results[item].msg, true) | default('no output', true) }}
   # The loop variable is an index, not the per-iteration result: that result's own
   # item key is the postgres_databases entry, password included, and looping it
   # directly would put that entry back into a value ansible dumps on a failed item.
@@ -105,7 +105,7 @@
       Postgres role password update failed for {{ postgres_databases[item].user }}
       (transport rc={{ app_platform_postgres_password_result.results[item].rc | default('n/a') }}):
       {{ (app_platform_postgres_password_result.results[item].stderr |
-      default(app_platform_postgres_password_result.results[item].msg) | default('no output', true)) |
+      default(app_platform_postgres_password_result.results[item].msg, true) | default('no output', true)) |
       regex_replace("PASSWORD '.*", "PASSWORD '<redacted>") }}
   # command embeds the password in the ALTER ROLE statement, and psql echoes the
   # offending statement as a LINE 1: context on a syntax error, so stderr itself can
@@ -149,7 +149,7 @@
       Postgres database creation failed for {{ postgres_databases[item].name }}
       (transport rc={{ app_platform_postgres_db_result.results[item].rc | default('n/a') }}):
       {{ app_platform_postgres_db_result.results[item].stderr |
-      default(app_platform_postgres_db_result.results[item].msg) | default('no output', true) }}
+      default(app_platform_postgres_db_result.results[item].msg, true) | default('no output', true) }}
   loop: "{{ range(app_platform_postgres_db_result.results | length) | list }}"
   loop_control:
     label: "{{ postgres_databases[item].name }}"

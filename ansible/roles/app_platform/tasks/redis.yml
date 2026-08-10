@@ -77,7 +77,7 @@
       Redis ACL registration failed for user {{ redis_users[item].name }}
       (transport rc={{ app_platform_redis_acl_result.results[item].rc | default('n/a') }}):
       {{ app_platform_redis_acl_result.results[item].stdout |
-      default(app_platform_redis_acl_result.results[item].msg) | default('no output', true) }}
+      default(app_platform_redis_acl_result.results[item].msg, true) | default('no output', true) }}
   # The loop variable is an index, not the per-iteration result: that result's own
   # item key is the redis_users entry, password included, and looping it directly
   # would put that entry back into a value ansible dumps on a failed item.
