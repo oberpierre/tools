@@ -77,10 +77,17 @@
       Redis ACL registration failed for user {{ redis_users[item].name }}
       (transport rc={{ app_platform_redis_acl_result.results[item].rc | default('n/a') }}):
       {{ app_platform_redis_acl_result.results[item].stdout |
-      default(app_platform_redis_acl_result.results[item].msg) | default('no output') }}
+      default(app_platform_redis_acl_result.results[item].msg) | default('no output', true) }}
   # The loop variable is an index, not the per-iteration result: that result's own
   # item key is the redis_users entry, password included, and looping it directly
   # would put that entry back into a value ansible dumps on a failed item.
+  # This message prints stdout unredacted, unlike the Postgres password task: the
+  # command above carries the credential as an ACL SETUSER argument, but redis-cli's
+  # reply never echoes its own argv, and k8s_exec's only fail_json here is "Failed to
+  # execute on pod %s due to : %s", whose exception comes from websocket_call and
+  # carries no request URL, which is where the command would live. There is no
+  # failure path in Redis's ACL SETUSER that reflects the command line back, so
+  # there is nothing here for a redaction to catch.
   loop: "{{ range(app_platform_redis_acl_result.results | length) | list }}"
   loop_control:
     label: "{{ redis_users[item].name }}"

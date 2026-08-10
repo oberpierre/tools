@@ -55,7 +55,7 @@
       Postgres role creation failed for {{ postgres_databases[item].user }}
       (transport rc={{ app_platform_postgres_role_result.results[item].rc | default('n/a') }}):
       {{ app_platform_postgres_role_result.results[item].stderr |
-      default(app_platform_postgres_role_result.results[item].msg) | default('no output') }}
+      default(app_platform_postgres_role_result.results[item].msg) | default('no output', true) }}
   # The loop variable is an index, not the per-iteration result: that result's own
   # item key is the postgres_databases entry, password included, and looping it
   # directly would put that entry back into a value ansible dumps on a failed item.
@@ -105,13 +105,15 @@
       Postgres role password update failed for {{ postgres_databases[item].user }}
       (transport rc={{ app_platform_postgres_password_result.results[item].rc | default('n/a') }}):
       {{ (app_platform_postgres_password_result.results[item].stderr |
-      default(app_platform_postgres_password_result.results[item].msg) | default('no output')) |
-      replace(postgres_databases[item].password, '<redacted>') |
-      replace(postgres_databases[item].password | replace("'", "''"), '<redacted>') }}
+      default(app_platform_postgres_password_result.results[item].msg) | default('no output', true)) |
+      regex_replace("PASSWORD '.*", "PASSWORD '<redacted>") }}
   # command embeds the password in the ALTER ROLE statement, and psql echoes the
   # offending statement as a LINE 1: context on a syntax error, so stderr itself can
-  # carry the credential; both the raw password and its SQL-escaped (doubled-quote)
-  # form are stripped before this msg is rendered.
+  # carry the credential. psql truncates a long LINE 1: to a fixed-width window, so
+  # matching the whole password by value can miss a truncated echo; matching by
+  # position (everything after "PASSWORD '") does not depend on the password's value
+  # or length, and it also handles an empty password without corrupting the rest of
+  # the message, which a value-based replace does character by character.
   loop: "{{ range(app_platform_postgres_password_result.results | length) | list }}"
   loop_control:
     label: "{{ postgres_databases[item].user }}"
@@ -147,7 +149,7 @@
       Postgres database creation failed for {{ postgres_databases[item].name }}
       (transport rc={{ app_platform_postgres_db_result.results[item].rc | default('n/a') }}):
       {{ app_platform_postgres_db_result.results[item].stderr |
-      default(app_platform_postgres_db_result.results[item].msg) | default('no output') }}
+      default(app_platform_postgres_db_result.results[item].msg) | default('no output', true) }}
   loop: "{{ range(app_platform_postgres_db_result.results | length) | list }}"
   loop_control:
     label: "{{ postgres_databases[item].name }}"
