@@ -15,7 +15,7 @@
       {{ app_platform_postgres_admin_secret.resources[0].data['postgres-password'] | b64decode }}
   no_log: true
 
-- name: Creating Postgres role {{ item.user }}
+- name: Creating Postgres role
   kubernetes.core.k8s_exec:
     namespace: data-services
     pod: postgresql-0
@@ -36,15 +36,33 @@
   register: app_platform_postgres_role_result
   # A role that already exists is left as-is here; the next task sets its password
   # unconditionally, which is what makes the declared credential authoritative.
+  # rc defaults to a nonzero sentinel because k8s_exec calls fail_json, leaving no rc
+  # at all, when the exec stream itself cannot open, and this expression must not
+  # raise before the failure task below gets a chance to report why.
   changed_when:
-    - app_platform_postgres_role_result.rc == 0
+    - (app_platform_postgres_role_result.rc | default(1)) == 0
     - "'already exists' not in (app_platform_postgres_role_result.stderr | default(''))"
-  failed_when:
-    - app_platform_postgres_role_result.rc != 0
-    - "'already exists' not in (app_platform_postgres_role_result.stderr | default(''))"
+  # failed_when: false plus a following fail: k8s_exec always reports changed=True and
+  # no_log here would otherwise censor the module's own msg as well as the command's
+  # stdout, printing only Ansible's "output has been hidden" notice on a genuine
+  # failure.
+  failed_when: false
   no_log: true
 
-- name: Setting Postgres role password for {{ item.user }}
+- name: Failing on a Postgres role creation that did not apply cleanly
+  ansible.builtin.fail:
+    msg: >-
+      Postgres role creation failed for {{ item.item.user }}
+      (transport rc={{ item.rc | default('n/a') }}):
+      {{ item.stderr | default(item.msg) | default('no output') }}
+  loop: "{{ app_platform_postgres_role_result.results }}"
+  loop_control:
+    label: "{{ item.item.user }}"
+  when: >-
+    (item.rc | default(1)) != 0 and
+    'already exists' not in (item.stderr | default(''))
+
+- name: Setting Postgres role password
   kubernetes.core.k8s_exec:
     namespace: data-services
     pod: postgresql-0
@@ -66,12 +84,25 @@
   loop_control:
     label: "{{ item.user }}"
   register: app_platform_postgres_password_result
+  changed_when: (app_platform_postgres_password_result.rc | default(1)) == 0
   # k8s_exec always reports success regardless of the command's exit code, so a real
-  # failure here has to be raised explicitly or it is silently swallowed.
-  failed_when: app_platform_postgres_password_result.rc != 0
+  # failure here has to be raised explicitly or it is silently swallowed. Deferred to
+  # the fail task below rather than checked inline, matching the task above.
+  failed_when: false
   no_log: true
 
-- name: Creating Postgres database {{ item.name }}
+- name: Failing on a Postgres role password update that did not apply cleanly
+  ansible.builtin.fail:
+    msg: >-
+      Postgres role password update failed for {{ item.item.user }}
+      (transport rc={{ item.rc | default('n/a') }}):
+      {{ item.stderr | default(item.msg) | default('no output') }}
+  loop: "{{ app_platform_postgres_password_result.results }}"
+  loop_control:
+    label: "{{ item.item.user }}"
+  when: (item.rc | default(1)) != 0
+
+- name: Creating Postgres database
   kubernetes.core.k8s_exec:
     namespace: data-services
     pod: postgresql-0
@@ -90,9 +121,20 @@
     label: "{{ item.name }}"
   register: app_platform_postgres_db_result
   changed_when:
-    - app_platform_postgres_db_result.rc == 0
+    - (app_platform_postgres_db_result.rc | default(1)) == 0
     - "'already exists' not in (app_platform_postgres_db_result.stderr | default(''))"
-  failed_when:
-    - app_platform_postgres_db_result.rc != 0
-    - "'already exists' not in (app_platform_postgres_db_result.stderr | default(''))"
+  failed_when: false
   no_log: true
+
+- name: Failing on a Postgres database creation that did not apply cleanly
+  ansible.builtin.fail:
+    msg: >-
+      Postgres database creation failed for {{ item.item.name }}
+      (transport rc={{ item.rc | default('n/a') }}):
+      {{ item.stderr | default(item.msg) | default('no output') }}
+  loop: "{{ app_platform_postgres_db_result.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: >-
+    (item.rc | default(1)) != 0 and
+    'already exists' not in (item.stderr | default(''))
