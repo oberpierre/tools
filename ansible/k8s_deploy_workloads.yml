@@ -1,0 +1,249 @@
+---
+- name: Deploying application workloads to Kubernetes
+  hosts: all
+
+  # Runs before roles:, so a malformed var file is rejected before app_platform's
+  # registrations (Postgres role/password, Redis ACL) have any side effect on the
+  # cluster: the deploy refuses the file outright rather than half-honouring it.
+  pre_tasks:
+    - name: Rejecting a var file that declares no workloads
+      ansible.builtin.assert:
+        that:
+          - workloads is defined
+          - workloads | length > 0
+        fail_msg: >-
+          No workloads declared. This playbook deploys the workloads a var file
+          names, so add at least one entry to workloads before running it.
+        quiet: true
+
+    # Runs ahead of the checks below because name is what this one is testing: a
+    # missing name cannot appear in its own fail_msg, so this reports the position in
+    # workloads instead. Once a var file passes this, the default('(unnamed)')
+    # fallback in the messages below never actually fires.
+    - name: Rejecting a workload with no name
+      ansible.builtin.assert:
+        that:
+          - (workloads[item].name | default('', true) | trim) != ''
+        fail_msg: >-
+          workloads entry at position {{ item }} has no name. name is the resource
+          name, the label selector, and the stem of the derived <name>-svc,
+          <name>-ingress and <name>-cert; a missing or empty one renders objects the
+          API rejects.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "position {{ item }}"
+
+    # Looping the raw workloads list templates every nested value eagerly, including
+    # a field an overlay never supplied, so the loop itself raises before any of
+    # these asserts gets a chance to run and name the entry. Looping the index
+    # instead only templates the length, so workloads[item] resolves one attribute
+    # at a time and each entry is still checked by name even when a field on it is
+    # exactly what is missing.
+    - name: Rejecting a workload with an unrecognised kind
+      ansible.builtin.assert:
+        that:
+          - (workloads[item].kind | default('')) in ['Deployment', 'CronJob']
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+          kind {{ workloads[item].kind | default('(unset)') }}, which this platform
+          does not render. Declare kind as Deployment or CronJob.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
+    - name: Rejecting a CronJob that declares service or ingress
+      ansible.builtin.assert:
+        that:
+          - not ((workloads[item].kind | default('')) == 'CronJob' and (workloads[item].service is defined or workloads[item].ingress is defined))
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} is a
+          CronJob declaring service or ingress. A scheduled job has no continuously
+          running pod for a Service to select; drop service and ingress from this
+          entry.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
+    # templates/workloads.j2 reads workload.schedule with no default, and the API
+    # requires it on a CronJob. Catching it here means a missing schedule surfaces
+    # before roles: rotates the Postgres password and ACL SAVEs the Redis users,
+    # instead of at template render after those side effects are already done.
+    - name: Rejecting a CronJob with no schedule
+      ansible.builtin.assert:
+        that:
+          - not ((workloads[item].kind | default('')) == 'CronJob' and (workloads[item].schedule | default('', true) | trim) == '')
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} is a
+          CronJob declaring no schedule. templates/workloads.j2 requires schedule to
+          render a CronJob; declare a non-empty schedule for this entry.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
+    - name: Rejecting a workload that declares ingress without service
+      ansible.builtin.assert:
+        that:
+          - not (workloads[item].ingress is defined and workloads[item].service is not defined)
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+          ingress without service. An Ingress needs a backend Service and port to
+          attach to, so declare service (with the port to expose) alongside ingress,
+          or drop ingress if this workload should not be reachable from outside the
+          cluster.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
+    # service and ingress are each optional, so a workload declaring neither must
+    # pass both conditions below without either one applying. Depth matches the
+    # checks above: presence and non-emptiness, not port ranges or hostname syntax.
+    - name: Rejecting a declared service with no port or ingress with no hosts
+      ansible.builtin.assert:
+        that:
+          - not (workloads[item].service is defined and (workloads[item].service.port | default('', true) | trim) == '')
+          - not (workloads[item].ingress is defined and not (ingress_hosts is sequence and ingress_hosts is not string and ingress_hosts | length > 0))
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+          service with no non-empty port, or ingress with no non-empty hosts list.
+          service.port and ingress.hosts are both required when service or ingress is
+          declared; hosts must be a list even for a single host, e.g. hosts: [app.example.com],
+          not a bare string.
+        quiet: true
+      vars:
+        ingress_hosts: "{{ workloads[item].ingress.hosts | default([], true) }}"
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
+    # (registry[item] | default('', true) | trim) is empty in four cases this treats
+    # the same: the key is absent from the block, it is present but its value is an
+    # overlay variable the caller never supplied, the caller supplied it as an empty
+    # string (what an unset optional secret resolves to), or the caller supplied it as
+    # an explicit null (what a YAML key written with nothing after the colon parses
+    # to). `is defined` alone only catches the first two: an empty string is still
+    # defined, so it would pass straight through into the pull Secret and fail only at
+    # pull time. The bare one-argument default('') only catches undefined: an explicit
+    # null is already defined, so it passes through and trim coerces it to the
+    # non-empty string "None". The second default() argument, true, additionally
+    # substitutes for any falsy value, which null is.
+    - name: Rejecting a registry block missing a required key
+      ansible.builtin.assert:
+        that:
+          - (registry[item] | default('', true) | trim) != ''
+        fail_msg: >-
+          registry.{{ item }} does not resolve to a non-empty value. registry.host,
+          registry.username and registry.password are required together; omit
+          registry entirely to deploy public images rather than leaving it partially
+          filled in.
+        quiet: true
+      when: registry is defined
+      loop: ["host", "username", "password"]
+      loop_control:
+        label: "{{ item }}"
+
+    # Runs before roles: for the same reason as the checks above: workloads is read
+    # only when the manifest template renders, after roles: has already rotated the
+    # Postgres password and ACL SAVEd the Redis users, so an image the overlay forgot
+    # would otherwise surface as a half-honoured var file instead of a clean refusal.
+    # The trim guard is the same one above: an empty or null image resolves to a
+    # string, defined either way, but still not something any registry can pull.
+    - name: Rejecting a workload whose image the overlay did not supply
+      ansible.builtin.assert:
+        that:
+          - (workloads[item].image | default('', true) | trim) != ''
+        fail_msg: >-
+          workloads entry {{ workloads[item].name | default('(unnamed)') }}
+          references an image that does not resolve to a non-empty value. Supply its
+          value through ansible_extra_vars before running this playbook.
+        quiet: true
+      loop: "{{ range(workloads | length) | list }}"
+      loop_control:
+        label: "{{ workloads[item].name | default('(unnamed)') }}"
+
+  roles:
+    # Registers the namespace, Postgres and Redis credentials, and app Secrets the
+    # workloads below assume already exist before their envFrom can resolve.
+    - app_platform
+
+  tasks:
+    # Mirrors k8s_deploy_app.yml's registry auth secret. Without it, an application
+    # whose images are private goes ImagePullBackOff on every workload below while the
+    # apply itself still succeeds.
+    - name: Create dockerconfigjson content for registry authentication
+      ansible.builtin.set_fact:
+        reg_auth_string: "{{ (registry.username + ':' + registry.password) | b64encode }}"
+      when: registry is defined and registry.host is defined and registry.username is defined and registry.password is defined
+      no_log: true
+
+    - name: Build registry auth structure
+      ansible.builtin.set_fact:
+        reg_auth:
+          auths: "{{ {registry.host: {'auth': reg_auth_string}} }}"
+      when: reg_auth_string is defined
+      no_log: true
+
+    - name: Create container registry secret for authentication
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ app_name }}-regcred"
+            namespace: "{{ app_namespace }}"
+          type: kubernetes.io/dockerconfigjson
+          data:
+            .dockerconfigjson: "{{ reg_auth | to_json | b64encode }}"
+      when: reg_auth is defined
+      no_log: true
+
+    - name: Create app directory for manifests
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube/{{ app_name }}"
+        state: directory
+        mode: "0755"
+      register: app_dir
+
+    - name: Create workloads manifest
+      ansible.builtin.template:
+        lstrip_blocks: true
+        src: templates/workloads.j2
+        dest: "{{ app_dir.path }}/{{ app_name }}-workloads.yml"
+        mode: "0600"
+      register: workloads_manifest
+
+    - name: Deploy application workloads {{ app_name }}
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ workloads_manifest.dest }}"
+
+    # No failed_when here: a wait that cannot succeed fails the task on its own. This is
+    # a health check, not a race against a credential's lifetime: readyReplicas counts
+    # the outgoing revision's pods too, and at replicas: 1 the default 25% maxUnavailable
+    # floors to 0, so the old condition was already satisfied by the previous rollout the
+    # instant apply returned. Waiting on the generation, updated count and unavailable
+    # count instead means an image that cannot be pulled or started fails the pipeline.
+    # A CronJob gets no wait: creating one creates no pod, so nothing here would prove
+    # its image can be pulled any earlier than the first scheduled run does.
+    - name: Waiting for Deployments to reach declared replicas
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ item.name }}"
+        namespace: "{{ app_namespace }}"
+      register: workload_deployment_status
+      until:
+        - workload_deployment_status.resources | length > 0
+        - workload_deployment_status.resources[0].status.observedGeneration | default(-1) >= workload_deployment_status.resources[0].metadata.generation
+        - workload_deployment_status.resources[0].status.updatedReplicas | default(0) == workload_deployment_status.resources[0].spec.replicas
+        - workload_deployment_status.resources[0].status.unavailableReplicas | default(0) == 0
+      retries: 10
+      delay: 15
+      loop: "{{ workloads | selectattr('kind', 'equalto', 'Deployment') | list }}"
+      loop_control:
+        label: "{{ item.name }}"

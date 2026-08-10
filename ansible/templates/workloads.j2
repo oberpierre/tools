@@ -1,0 +1,144 @@
+{%- set ns = namespace(first=true) -%}
+{% for workload in workloads %}
+{% if not ns.first %}
+---
+{% endif %}
+{% set ns.first = false %}
+{% if workload.kind == "Deployment" %}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ workload.name }}
+  namespace: {{ app_namespace }}
+  labels:
+    app: {{ workload.name }}
+spec:
+  replicas: {{ workload.replicas | default(1) }}
+  selector:
+    matchLabels:
+      app: {{ workload.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ workload.name }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: {{ workload.name }}
+          image: {{ workload.image }}
+          imagePullPolicy: IfNotPresent
+          {% if workload.service is defined %}
+          ports:
+            - containerPort: {{ workload.service.target_port | default(workload.service.port) }}
+          {% endif %}
+          {% if workload.env_from is defined and workload.env_from | length > 0 %}
+          envFrom:
+            {% for secret_name in workload.env_from %}
+            - secretRef:
+                name: {{ secret_name }}
+            {% endfor %}
+          {% endif %}
+          {% if workload.resources is defined %}
+          resources:
+            {{ workload.resources | to_nice_yaml(indent=2) | indent(12) }}
+          {% endif %}
+      {% if reg_auth is defined %}
+      imagePullSecrets:
+        - name: {{ app_name }}-regcred
+      {% endif %}
+{% elif workload.kind == "CronJob" %}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ workload.name }}
+  namespace: {{ app_namespace }}
+  labels:
+    app: {{ workload.name }}
+spec:
+  schedule: "{{ workload.schedule }}"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: {{ workload.name }}
+        spec:
+          # OnFailure restarts the failed container in place, up to backoffLimit,
+          # before the Job is left for the next schedule tick. The backup and verify
+          # CronJobs use Never and get a fresh Pod per attempt instead, because those
+          # are two scripts this repo owns and knows are safe to rerun from a blank
+          # Pod; a workload's image here is application code this platform does not
+          # control, so a cheap in-place retry is the safer default.
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+          containers:
+            - name: {{ workload.name }}
+              image: {{ workload.image }}
+              imagePullPolicy: IfNotPresent
+              {% if workload.env_from is defined and workload.env_from | length > 0 %}
+              envFrom:
+                {% for secret_name in workload.env_from %}
+                - secretRef:
+                    name: {{ secret_name }}
+                {% endfor %}
+              {% endif %}
+              {% if workload.resources is defined %}
+              resources:
+                {{ workload.resources | to_nice_yaml(indent=2) | indent(16) }}
+              {% endif %}
+          {% if reg_auth is defined %}
+          imagePullSecrets:
+            - name: {{ app_name }}-regcred
+          {% endif %}
+{% endif %}
+{% if workload.service is defined %}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ workload.name }}-svc
+  namespace: {{ app_namespace }}
+spec:
+  selector:
+    app: {{ workload.name }}
+  ports:
+    - protocol: TCP
+      port: {{ workload.service.port }}
+      targetPort: {{ workload.service.target_port | default(workload.service.port) }}
+{% endif %}
+{% if workload.ingress is defined and workload.service is defined %}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ workload.name }}-ingress
+  namespace: {{ app_namespace }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ cluster_issuer_name | default("letsencrypt-prod") }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        {% for host in workload.ingress.hosts %}
+        - {{ host }}
+        {% endfor %}
+      secretName: {{ workload.name }}-cert
+  rules:
+    {% for host in workload.ingress.hosts %}
+    - host: {{ host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ workload.name }}-svc
+                port:
+                  number: {{ workload.service.port }}
+    {% endfor %}
+{% endif %}
+{% endfor -%}

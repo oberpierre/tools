@@ -10,6 +10,11 @@ on:
         description: "Container image to deploy. For dynamic generation of the container image name, will be made available as CONTAINER_IMAGE environment variable and can be referenced as such in your Ansible variable file."
         required: false
         type: string
+      playbook:
+        description: "Playbook in tools/ansible to run. Defaults to the single-app ingress deployment."
+        required: false
+        type: string
+        default: "k8s_deploy_app.yml"
     secrets:
       ansible_inventory_content:
         description: "Content of the Ansible inventory file to use for deployment."
@@ -22,6 +27,9 @@ on:
         required: false
       ssh_private_key:
         description: "SSH private key for accessing the deployment target."
+        required: false
+      ansible_extra_vars:
+        description: "JSON object of Ansible variables. Written to a file and passed as a second --extra-vars after ansible_var_file."
         required: false
 
 jobs:
@@ -70,14 +78,25 @@ jobs:
       - name: Configure known_hosts
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.ssh_known_hosts }}" >> ~/.ssh/known_hosts
+          printf '%s\n' "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.ssh_known_hosts }}
 
       - name: Deploy application to Kubernetes
         run: |
           cd tools/ansible
-          echo "${{ secrets.ansible_inventory_content }}" > inventory
-          ansible-playbook k8s_deploy_app.yml -i inventory \
-            --extra-vars "@${{ github.workspace }}/app/${{ inputs.ansible_var_file }}"
+          umask 077
+          printf '%s\n' "$ANSIBLE_INVENTORY_CONTENT" > inventory
+          extra_vars_args=(--extra-vars "@$ANSIBLE_VAR_FILE_PATH")
+          if [ -n "$ANSIBLE_EXTRA_VARS" ]; then
+            printf '%s' "$ANSIBLE_EXTRA_VARS" > extra-vars.json
+            extra_vars_args+=(--extra-vars "@extra-vars.json")
+          fi
+          ansible-playbook "$PLAYBOOK" -i inventory "${extra_vars_args[@]}"
         env:
           CONTAINER_IMAGE: ${{ inputs.container_image }}
           REGISTRY_PASSWORD: ${{ secrets.registry_password }}
+          ANSIBLE_EXTRA_VARS: ${{ secrets.ansible_extra_vars }}
+          ANSIBLE_INVENTORY_CONTENT: ${{ secrets.ansible_inventory_content }}
+          ANSIBLE_VAR_FILE_PATH: ${{ github.workspace }}/app/${{ inputs.ansible_var_file }}
+          PLAYBOOK: ${{ inputs.playbook }}
