@@ -107,7 +107,7 @@
   ansible.builtin.fail:
     msg: >-
       Redis ACL SAVE failed (transport rc={{ app_platform_redis_save_result.rc | default('n/a') }}):
-      {{ app_platform_redis_save_result.stdout | default(app_platform_redis_save_result.msg) | default('no output') }}
+      {{ app_platform_redis_save_result.stdout | default(app_platform_redis_save_result.msg, true) | default('no output', true) }}
   # Same allowlist as the registration check above, with the same rc default.
   when: >-
     (app_platform_redis_save_result.rc | default(1)) != 0 or
