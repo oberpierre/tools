@@ -52,15 +52,19 @@
 - name: Failing on a Postgres role creation that did not apply cleanly
   ansible.builtin.fail:
     msg: >-
-      Postgres role creation failed for {{ item.item.user }}
-      (transport rc={{ item.rc | default('n/a') }}):
-      {{ item.stderr | default(item.msg) | default('no output') }}
-  loop: "{{ app_platform_postgres_role_result.results }}"
+      Postgres role creation failed for {{ postgres_databases[item].user }}
+      (transport rc={{ app_platform_postgres_role_result.results[item].rc | default('n/a') }}):
+      {{ app_platform_postgres_role_result.results[item].stderr |
+      default(app_platform_postgres_role_result.results[item].msg) | default('no output') }}
+  # The loop variable is an index, not the per-iteration result: that result's own
+  # item key is the postgres_databases entry, password included, and looping it
+  # directly would put that entry back into a value ansible dumps on a failed item.
+  loop: "{{ range(app_platform_postgres_role_result.results | length) | list }}"
   loop_control:
-    label: "{{ item.item.user }}"
+    label: "{{ postgres_databases[item].user }}"
   when: >-
-    (item.rc | default(1)) != 0 and
-    'already exists' not in (item.stderr | default(''))
+    (app_platform_postgres_role_result.results[item].rc | default(1)) != 0 and
+    'already exists' not in (app_platform_postgres_role_result.results[item].stderr | default(''))
 
 - name: Setting Postgres role password
   kubernetes.core.k8s_exec:
@@ -84,6 +88,10 @@
   loop_control:
     label: "{{ item.user }}"
   register: app_platform_postgres_password_result
+  # rc 0 means only that ALTER ROLE ran, not that the password changed: the statement
+  # returns rc 0 whether it left the password as it was or overwrote it, so this
+  # reports changed on every successful run. Real change detection needs a state
+  # comparison against pg_authid, which this task does not implement.
   changed_when: (app_platform_postgres_password_result.rc | default(1)) == 0
   # k8s_exec always reports success regardless of the command's exit code, so a real
   # failure here has to be raised explicitly or it is silently swallowed. Deferred to
@@ -94,13 +102,20 @@
 - name: Failing on a Postgres role password update that did not apply cleanly
   ansible.builtin.fail:
     msg: >-
-      Postgres role password update failed for {{ item.item.user }}
-      (transport rc={{ item.rc | default('n/a') }}):
-      {{ item.stderr | default(item.msg) | default('no output') }}
-  loop: "{{ app_platform_postgres_password_result.results }}"
+      Postgres role password update failed for {{ postgres_databases[item].user }}
+      (transport rc={{ app_platform_postgres_password_result.results[item].rc | default('n/a') }}):
+      {{ (app_platform_postgres_password_result.results[item].stderr |
+      default(app_platform_postgres_password_result.results[item].msg) | default('no output')) |
+      replace(postgres_databases[item].password, '<redacted>') |
+      replace(postgres_databases[item].password | replace("'", "''"), '<redacted>') }}
+  # command embeds the password in the ALTER ROLE statement, and psql echoes the
+  # offending statement as a LINE 1: context on a syntax error, so stderr itself can
+  # carry the credential; both the raw password and its SQL-escaped (doubled-quote)
+  # form are stripped before this msg is rendered.
+  loop: "{{ range(app_platform_postgres_password_result.results | length) | list }}"
   loop_control:
-    label: "{{ item.item.user }}"
-  when: (item.rc | default(1)) != 0
+    label: "{{ postgres_databases[item].user }}"
+  when: (app_platform_postgres_password_result.results[item].rc | default(1)) != 0
 
 - name: Creating Postgres database
   kubernetes.core.k8s_exec:
@@ -129,12 +144,13 @@
 - name: Failing on a Postgres database creation that did not apply cleanly
   ansible.builtin.fail:
     msg: >-
-      Postgres database creation failed for {{ item.item.name }}
-      (transport rc={{ item.rc | default('n/a') }}):
-      {{ item.stderr | default(item.msg) | default('no output') }}
-  loop: "{{ app_platform_postgres_db_result.results }}"
+      Postgres database creation failed for {{ postgres_databases[item].name }}
+      (transport rc={{ app_platform_postgres_db_result.results[item].rc | default('n/a') }}):
+      {{ app_platform_postgres_db_result.results[item].stderr |
+      default(app_platform_postgres_db_result.results[item].msg) | default('no output') }}
+  loop: "{{ range(app_platform_postgres_db_result.results | length) | list }}"
   loop_control:
-    label: "{{ item.item.name }}"
+    label: "{{ postgres_databases[item].name }}"
   when: >-
-    (item.rc | default(1)) != 0 and
-    'already exists' not in (item.stderr | default(''))
+    (app_platform_postgres_db_result.results[item].rc | default(1)) != 0 and
+    'already exists' not in (app_platform_postgres_db_result.results[item].stderr | default(''))

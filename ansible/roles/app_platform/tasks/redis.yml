@@ -34,6 +34,10 @@
   # rc defaults to a nonzero sentinel: k8s_exec calls fail_json, leaving no rc at all,
   # when the exec stream itself cannot open, and this expression must not raise
   # before the failure task below gets a chance to report why.
+  # ACL SETUSER has exactly one success reply, OK, whether or not the user's rules
+  # actually differed from what was already registered, so this reports changed on
+  # every successful run. Real change detection needs a state comparison against
+  # ACL GETUSER, which this task does not implement.
   changed_when:
     - (app_platform_redis_acl_result.rc | default(1)) == 0
     - (app_platform_redis_acl_result.stdout | default('') | trim) == 'OK'
@@ -55,6 +59,10 @@
     command: >-
       redis-cli -a {{ app_platform_redis_admin_password | quote }} --no-auth-warning ACL SAVE
   register: app_platform_redis_save_result
+  # ACL SAVE has exactly one success reply, OK, whether or not the on-disk ACL file
+  # actually changed, so this reports changed on every successful run. Real change
+  # detection needs a state comparison against the persisted ACL file, which this
+  # task does not implement.
   changed_when:
     - (app_platform_redis_save_result.rc | default(1)) == 0
     - (app_platform_redis_save_result.stdout | default('') | trim) == 'OK'
@@ -66,12 +74,16 @@
 - name: Failing on a Redis ACL registration that did not apply cleanly
   ansible.builtin.fail:
     msg: >-
-      Redis ACL registration failed for user {{ item.item.name }}
-      (transport rc={{ item.rc | default('n/a') }}):
-      {{ item.stdout | default(item.msg) | default('no output') }}
-  loop: "{{ app_platform_redis_acl_result.results }}"
+      Redis ACL registration failed for user {{ redis_users[item].name }}
+      (transport rc={{ app_platform_redis_acl_result.results[item].rc | default('n/a') }}):
+      {{ app_platform_redis_acl_result.results[item].stdout |
+      default(app_platform_redis_acl_result.results[item].msg) | default('no output') }}
+  # The loop variable is an index, not the per-iteration result: that result's own
+  # item key is the redis_users entry, password included, and looping it directly
+  # would put that entry back into a value ansible dumps on a failed item.
+  loop: "{{ range(app_platform_redis_acl_result.results | length) | list }}"
   loop_control:
-    label: "{{ item.item.name }}"
+    label: "{{ redis_users[item].name }}"
   # An allowlist, not a blocklist: redis-cli splits its output across both streams, so
   # an error string picked up from stdout alone can miss a failure that only shows on
   # stderr, and a list of tokens is only ever as complete as what someone already
@@ -81,7 +93,8 @@
   # result carries neither rc nor stdout, and this must not raise on its way to
   # reporting that.
   when: >-
-    (item.rc | default(1)) != 0 or (item.stdout | default('') | trim) != 'OK'
+    (app_platform_redis_acl_result.results[item].rc | default(1)) != 0 or
+    (app_platform_redis_acl_result.results[item].stdout | default('') | trim) != 'OK'
 
 - name: Failing if Redis ACL persistence did not apply cleanly
   ansible.builtin.fail:
