@@ -3,13 +3,11 @@
 # password at all, does not fail on either side: Redis and Postgres both accept it
 # and the caller's declared entry goes live anyway. Both mistakes are asserted here,
 # naming the offending entry, before anything is registered.
-#
-# Looping the raw list templates every nested value eagerly, including a key an
-# overlay never supplied, so the loop itself raises AnsibleUndefinedVariable naming
-# only that key, before any assert below gets a chance to run and name the entry.
-# Looping the index instead only templates the list's length, so redis_users[item]
-# and postgres_databases[item] resolve one attribute at a time and each entry is
-# still checked by name even when the missing field is exactly what is wrong with it.
+
+# The loop is over the index, not the list itself: indexing resolves each entry's
+# fields one at a time, so a key an overlay never supplied only breaks that entry's
+# own lookup instead of raising eagerly for the whole list before any assert here
+# gets to name which entry was wrong.
 
 - name: Rejecting a Redis user named default
   ansible.builtin.assert:

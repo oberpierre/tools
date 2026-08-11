@@ -22,8 +22,7 @@
     container: redis # target the DB container explicitly, not the metrics sidecar
     # reset clears whatever a previous deploy left before the declared rules are
     # (re)applied, so a narrowed or renamed ACL string fully replaces the old one
-    # instead of merging with it. The ACL string itself is only ever item.acl: this
-    # role never assumes a scope or writes one of its own.
+    # instead of merging with it.
     command: >-
       redis-cli -a {{ app_platform_redis_admin_password | quote }} --no-auth-warning
       ACL SETUSER {{ item.name | quote }} reset on >{{ item.password | quote }} {{ item.acl }}
@@ -34,10 +33,10 @@
   # rc defaults to a nonzero sentinel: k8s_exec calls fail_json, leaving no rc at all,
   # when the exec stream itself cannot open, and this expression must not raise
   # before the failure task below gets a chance to report why.
-  # ACL SETUSER has exactly one success reply, OK, whether or not the user's rules
-  # actually differed from what was already registered, so this reports changed on
-  # every successful run. Real change detection needs a state comparison against
-  # ACL GETUSER, which this task does not implement.
+
+  # ACL SETUSER has exactly one success reply, OK, whatever the user's rules actually
+  # differed from before, so this reports changed on every successful run. Real change
+  # detection needs a state comparison against ACL GETUSER, which this does not do.
   changed_when:
     - (app_platform_redis_acl_result.rc | default(1)) == 0
     - (app_platform_redis_acl_result.stdout | default('') | trim) == 'OK'
@@ -82,26 +81,18 @@
   # The loop variable is an index, not the per-iteration result: that result's own
   # item key is the redis_users entry, password included, and looping it directly
   # would put that entry back into a value ansible dumps on a failed item.
-  # This message prints stdout, or stderr, unredacted, unlike the Postgres password
-  # task: the command above carries the credential as an ACL SETUSER argument.
-  # Redis's ACL error reply, ERR Error in ACL SETUSER modifier '<token>': <reason>,
-  # does reflect one argv token verbatim, and k8s_exec's only fail_json here is
-  # "Failed to execute on pod %s due to : %s", whose exception comes from
-  # websocket_call and carries no request URL, which is where the command would
-  # live. The claim that survives is narrower: the > password modifier has no
-  # failure branch in ACLSetUser, so the reflected token is never the password, and
-  # there is nothing here for a redaction to catch.
+
+  # This message prints stdout/stderr unredacted, unlike the Postgres password task:
+  # the command above carries the password as an ACL SETUSER argument, but the `>`
+  # password modifier has no failure branch in ACLSetUser, so Redis's ACL error reply
+  # (which does reflect one argv token) is never that token.
   loop: "{{ range(app_platform_redis_acl_result.results | length) | list }}"
   loop_control:
     label: "{{ redis_users[item].name }}"
-  # An allowlist, not a blocklist: redis-cli splits its output across both streams, so
-  # an error string picked up from stdout alone can miss a failure that only shows on
-  # stderr, and a list of tokens is only ever as complete as what someone already
-  # thought to name. ACL SETUSER has exactly one success reply, so anything that is
-  # not that reply fails, whatever it says and on whichever stream it says it. rc
-  # defaults to a nonzero sentinel for the same reason as the task above: a fail_json
-  # result carries neither rc nor stdout, and this must not raise on its way to
-  # reporting that.
+  # An allowlist, not a blocklist: redis-cli splits output across both streams, so an
+  # error string from stdout alone can miss a stderr-only failure, and a list of known
+  # error tokens is only ever as complete as what someone thought to name. ACL SETUSER
+  # has exactly one success reply, so anything else fails, on either stream.
   when: >-
     (app_platform_redis_acl_result.results[item].rc | default(1)) != 0 or
     (app_platform_redis_acl_result.results[item].stdout | default('') | trim) != 'OK'

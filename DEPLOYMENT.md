@@ -186,24 +186,7 @@ Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, 
 
 `app_db_password`, `app_redis_password`, `registry_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path, only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay omits entirely is undefined, and that failure lands differently depending on where the key is read; a key the overlay supplies as an empty string is a second, distinct failure that a guard has to check for on purpose. A missing or empty `worker_image`, `nightly_job_image`, `frontend_image` or `registry` key is caught by name in `pre_tasks:`, before anything is applied. `app_db_password` and `app_redis_password` are also caught by name, by `roles/app_platform`'s own `validate.yml`, whether the overlay omits the key entirely or supplies it empty: that role indexes `postgres_databases` and `redis_users` by position rather than looping the list itself, the same fix applied to the checks above, so a missing key never reaches the raw loop expression that used to raise a bare Jinja error naming only the variable.
 
-Beyond the service account rules shown in the Quick Start above, this path additionally needs:
-
-```yaml
-sa_rules:
-  - apiGroups: ["batch"]
-    resources: ["cronjobs"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["pods/exec"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["postgresql-credentials", "redis-credentials"]
-    verbs: ["get"]
-```
+This path needs no service account rules beyond the Quick Start set above; that set already covers `cronjobs`, `pods` and `pods/exec`.
 
 `cronjobs` covers creating, updating and applying the CronJob objects themselves; the wait after applying reads only Deployments, never Pods, so a CronJob's image is not checked before the schedule first fires it.
 

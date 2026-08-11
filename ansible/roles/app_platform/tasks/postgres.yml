@@ -1,6 +1,6 @@
 ---
-# Central Postgres admin credentials, read from the cluster rather than passed in: the
-# calling pipeline must have kubeconfig.
+# Central Postgres admin credentials are read from the cluster rather than passed in;
+# the calling pipeline must have kubeconfig.
 - name: Reading PostgreSQL admin credentials
   kubernetes.core.k8s_info:
     api_version: v1
@@ -20,10 +20,9 @@
     namespace: data-services
     pod: postgresql-0
     container: postgresql # target the DB container explicitly, not the metrics sidecar
-    # item.user reaches SQL as an identifier, not a literal, so it is quoted as one:
-    # wrapped in double quotes with any embedded double quote doubled. Unquoted, a
-    # hyphenated name is a syntax error, and a name holding a quote or semicolon runs
-    # as a second statement with the superuser's privileges.
+    # item.user is a SQL identifier here, quoted with embedded double quotes doubled:
+    # a hyphenated name would otherwise be a syntax error, and a name holding a quote
+    # or semicolon would run as a second statement with the superuser's privileges.
     command: >-
       env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}
       psql --username=postgres -c {{ ("CREATE ROLE " + pg_role_ident + " WITH LOGIN;") | quote }}
@@ -34,18 +33,16 @@
   loop_control:
     label: "{{ item.user }}"
   register: app_platform_postgres_role_result
-  # A role that already exists is left as-is here; the next task sets its password
-  # unconditionally, which is what makes the declared credential authoritative.
-  # rc defaults to a nonzero sentinel because k8s_exec calls fail_json, leaving no rc
-  # at all, when the exec stream itself cannot open, and this expression must not
-  # raise before the failure task below gets a chance to report why.
+  # An existing role is left as-is; the next task sets its password unconditionally,
+  # which is what makes the declared credential authoritative.
+
+  # k8s_exec reports changed=True regardless of the command's outcome, and calls
+  # fail_json - leaving no rc at all - when the exec stream itself can't open; rc
+  # defaults to a nonzero sentinel so this doesn't raise before the fail task below
+  # can report why, which is also why failed_when is false and no_log stays here.
   changed_when:
     - (app_platform_postgres_role_result.rc | default(1)) == 0
     - "'already exists' not in (app_platform_postgres_role_result.stderr | default(''))"
-  # failed_when: false plus a following fail: k8s_exec always reports changed=True and
-  # no_log here would otherwise censor the module's own msg as well as the command's
-  # stdout, printing only Ansible's "output has been hidden" notice on a genuine
-  # failure.
   failed_when: false
   no_log: true
 
@@ -71,11 +68,9 @@
     namespace: data-services
     pod: postgresql-0
     container: postgresql
-    # psql's -v/:'var' substitution is only performed for input read as a script, not
-    # for a -c string, so the password is embedded directly: doubled single quotes
-    # escape it as a SQL literal, and quoting the whole -c argument keeps it one shell
-    # token no matter what other characters (spaces, quotes, backslashes) it holds.
-    # item.user is quoted as a SQL identifier for the same reason (see the task above).
+    # -c takes a single statement, not a script, so psql's :'var' substitution isn't
+    # available; the password is embedded directly, SQL-escaped by doubling single
+    # quotes, with the whole -c argument shell-quoted to keep it one token.
     command: >-
       env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}
       psql --username=postgres
@@ -89,13 +84,9 @@
     label: "{{ item.user }}"
   register: app_platform_postgres_password_result
   # rc 0 means only that ALTER ROLE ran, not that the password changed: the statement
-  # returns rc 0 whether it left the password as it was or overwrote it, so this
-  # reports changed on every successful run. Real change detection needs a state
-  # comparison against pg_authid, which this task does not implement.
+  # returns rc 0 either way, so this reports changed on every successful run. Real
+  # change detection would need a state comparison against pg_authid.
   changed_when: (app_platform_postgres_password_result.rc | default(1)) == 0
-  # k8s_exec always reports success regardless of the command's exit code, so a real
-  # failure here has to be raised explicitly or it is silently swallowed. Deferred to
-  # the fail task below rather than checked inline, matching the task above.
   failed_when: false
   no_log: true
 
@@ -112,19 +103,10 @@
       {{ (app_platform_postgres_password_result.results[item].stderr |
       default(app_platform_postgres_password_result.results[item].msg, true) | default('no output', true)) |
       regex_replace("PASSWORD '.*", "PASSWORD '<redacted>") }}
-  # command embeds the password in the ALTER ROLE statement, and psql echoes the
-  # offending statement as a LINE 1: context on a syntax error, so stderr itself can
-  # carry the credential. Positional redaction (everything after "PASSWORD '") does
-  # not depend on the password's value or length, and it also handles an empty
-  # password without corrupting the rest of the message, which a value-based replace
-  # does character by character. It is not sufficient alone: psql's own ERROR: line
-  # quotes the offending token with no "PASSWORD '" prefix at all, and the LINE n:
-  # window it prints scrolls to keep the error position visible, so that anchor can
-  # be cut off the left edge while the password itself stays on screen. The
-  # value-based replace above catches both of those, the raw password and its
-  # SQL-escaped (doubled single quote) form; it is guarded on pg_pw because
-  # str.replace('', x) would otherwise interleave the marker between every
-  # character of an empty password.
+  # The ALTER ROLE statement embeds the password and psql can echo it back in an error.
+  # Positional redaction survives a truncated echo and an empty password; the value-based
+  # pair catches lines carrying no "PASSWORD '" anchor. Neither covers the other, so both
+  # run, and the value pair is guarded because replace('', x) interleaves on empty.
   loop: "{{ range(app_platform_postgres_password_result.results | length) | list }}"
   loop_control:
     label: "{{ postgres_databases[item].user }}"
@@ -135,12 +117,9 @@
     namespace: data-services
     pod: postgresql-0
     container: postgresql
-    # createdb as the superuser (it always has CREATEDB) but hand ownership to the
-    # role, matching k8s_deploy_plausible.yml. "already exists" is tolerated: an
-    # existing database is left alone, only a missing one is created. createdb quotes
-    # --owner as a SQL identifier internally, so the shell quote below is enough:
-    # verified against postgres:17-alpine that a hyphenated owner and one holding a
-    # quote and a semicolon both land as the literal role name, not a second statement.
+    # Hands ownership to the role rather than leaving it with postgres, matching
+    # k8s_deploy_plausible.yml; createdb quotes --owner as an identifier internally,
+    # so the shell quote below is enough.
     command: >-
       env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}
       createdb --username=postgres --owner={{ item.user | quote }} {{ item.name | quote }}
