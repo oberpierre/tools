@@ -104,16 +104,27 @@
     msg: >-
       Postgres role password update failed for {{ postgres_databases[item].user }}
       (transport rc={{ app_platform_postgres_password_result.results[item].rc | default('n/a') }}):
+      {{ pg_reason | replace(pg_pw, '<redacted>') | replace(pg_pw | replace("'", "''"), '<redacted>')
+      if pg_pw else pg_reason }}
+  vars:
+    pg_pw: "{{ postgres_databases[item].password | default('', true) }}"
+    pg_reason: >-
       {{ (app_platform_postgres_password_result.results[item].stderr |
       default(app_platform_postgres_password_result.results[item].msg, true) | default('no output', true)) |
       regex_replace("PASSWORD '.*", "PASSWORD '<redacted>") }}
   # command embeds the password in the ALTER ROLE statement, and psql echoes the
   # offending statement as a LINE 1: context on a syntax error, so stderr itself can
-  # carry the credential. psql truncates a long LINE 1: to a fixed-width window, so
-  # matching the whole password by value can miss a truncated echo; matching by
-  # position (everything after "PASSWORD '") does not depend on the password's value
-  # or length, and it also handles an empty password without corrupting the rest of
-  # the message, which a value-based replace does character by character.
+  # carry the credential. Positional redaction (everything after "PASSWORD '") does
+  # not depend on the password's value or length, and it also handles an empty
+  # password without corrupting the rest of the message, which a value-based replace
+  # does character by character. It is not sufficient alone: psql's own ERROR: line
+  # quotes the offending token with no "PASSWORD '" prefix at all, and the LINE n:
+  # window it prints scrolls to keep the error position visible, so that anchor can
+  # be cut off the left edge while the password itself stays on screen. The
+  # value-based replace above catches both of those, the raw password and its
+  # SQL-escaped (doubled single quote) form; it is guarded on pg_pw because
+  # str.replace('', x) would otherwise interleave the marker between every
+  # character of an empty password.
   loop: "{{ range(app_platform_postgres_password_result.results | length) | list }}"
   loop_control:
     label: "{{ postgres_databases[item].user }}"
