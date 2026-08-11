@@ -33,12 +33,12 @@
   loop_control:
     label: "{{ item.user }}"
   register: app_platform_postgres_role_result
-  # An existing role is left as-is; the next task sets its password unconditionally,
-  # which is what makes the declared credential authoritative.
+  # An existing role is left as-is because the next task sets its password
+  # unconditionally, which is what makes the declared credential authoritative.
 
   # k8s_exec reports changed=True regardless of the command's outcome, and calls
-  # fail_json - leaving no rc at all - when the exec stream itself can't open; rc
-  # defaults to a nonzero sentinel so this doesn't raise before the fail task below
+  # fail_json, leaving no rc at all, when the exec stream itself can't open, so rc
+  # defaults to a nonzero sentinel, keeping this from raising before the fail task below
   # can report why, which is also why failed_when is false and no_log stays here.
   changed_when:
     - (app_platform_postgres_role_result.rc | default(1)) == 0
@@ -104,9 +104,9 @@
       default(app_platform_postgres_password_result.results[item].msg, true) | default('no output', true)) |
       regex_replace("PASSWORD '.*", "PASSWORD '<redacted>") }}
   # The ALTER ROLE statement embeds the password and psql can echo it back in an error.
-  # Positional redaction survives a truncated echo and an empty password; the value-based
-  # pair catches lines carrying no "PASSWORD '" anchor. Neither covers the other, so both
-  # run, and the value pair is guarded because replace('', x) interleaves on empty.
+  # Positional redaction survives a truncated echo and an empty password, whereas the
+  # value-based pair catches lines carrying no "PASSWORD '" anchor. Neither covers the other,
+  # so both run, and the value pair is guarded because replace('', x) interleaves on empty.
   loop: "{{ range(app_platform_postgres_password_result.results | length) | list }}"
   loop_control:
     label: "{{ postgres_databases[item].user }}"
