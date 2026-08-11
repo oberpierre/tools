@@ -61,14 +61,20 @@ In your repository, configure these secrets:
       resources: ["namespaces"]
       verbs: ["get", "create", "patch"]
     - apiGroups: ["apps", "extensions", "networking.k8s.io", ""]
-      resources:
-        - deployments
-        - services
-        - ingresses
+      resources: [deployments, services, ingresses]
       verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
     - apiGroups: [""]
       resources: ["secrets"]
       verbs: ["get", "create", "update", "patch"]
+    - apiGroups: ["batch"]
+      resources: ["cronjobs"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: [""]
+      resources: ["pods"]
+      verbs: ["get"]
+    - apiGroups: [""]
+      resources: ["pods/exec"]
+      verbs: ["get"]
   ```
 
 - `SSH_PRIVATE_KEY`: The SSH private key for accessing your hosts user. Password authentication is **not** supported.
