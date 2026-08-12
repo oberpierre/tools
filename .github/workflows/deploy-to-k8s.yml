@@ -90,7 +90,7 @@ jobs:
           # An unset or blank ansible_inventory_content still writes a parseable,
           # empty inventory: hosts: all then matches nothing and ansible-playbook
           # exits 0 having deployed nothing. Fail before that happens.
-          if ! grep -qE '^[[:space:]]*[^#[:space:]]' inventory; then
+          if ! grep -qE '^[[:space:]]*[^#;[:space:]]' inventory; then
             echo "ansible_inventory_content has no non-blank, non-comment line; refusing to run against an inventory that matches no host." >&2
             exit 1
           fi
