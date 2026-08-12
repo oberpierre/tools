@@ -1,6 +1,6 @@
 ---
-# Central Postgres admin credentials are read from the cluster rather than passed in;
-# the calling pipeline must have kubeconfig.
+# Central Postgres admin credentials are read from the cluster rather than passed in,
+# so the calling pipeline must have kubeconfig.
 - name: Reading PostgreSQL admin credentials
   kubernetes.core.k8s_info:
     api_version: v1
@@ -69,7 +69,7 @@
     pod: postgresql-0
     container: postgresql
     # -c takes a single statement, not a script, so psql's :'var' substitution isn't
-    # available; the password is embedded directly, SQL-escaped by doubling single
+    # available and the password is embedded directly, SQL-escaped by doubling single
     # quotes, with the whole -c argument shell-quoted to keep it one token.
     command: >-
       env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}
@@ -118,7 +118,7 @@
     pod: postgresql-0
     container: postgresql
     # Hands ownership to the role rather than leaving it with postgres, matching
-    # k8s_deploy_plausible.yml; createdb quotes --owner as an identifier internally,
+    # k8s_deploy_plausible.yml. createdb quotes --owner as an identifier internally,
     # so the shell quote below is enough.
     command: >-
       env PGPASSWORD={{ app_platform_postgres_admin_password | quote }}

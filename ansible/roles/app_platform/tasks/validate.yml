@@ -10,8 +10,8 @@
 # gets to name which entry was wrong.
 
 # A missing name makes the reserved-name check below raise deep inside a dict
-# lookup rather than naming the entry; a blank name passes that check silently and
-# only fails once Redis rejects it. Both are caught here first.
+# lookup rather than naming the entry, whereas a blank name passes that check
+# silently and only fails once Redis rejects it. Both are caught here first.
 - name: Rejecting a Redis user entry with no usable name
   ansible.builtin.assert:
     that:
@@ -108,10 +108,10 @@
     quiet: true
   when: app_secrets is defined
 
-# stringData needs a mapping of key to value; a string, a list or a null passed as
-# an entry's value would otherwise reach k8s_deploy_workloads.yml's k8s module and
-# fail there with a Kubernetes API error naming a field, not the var file entry that
-# caused it.
+# stringData needs a mapping of key to value, so a string, a list or a null passed
+# as an entry's value would otherwise reach k8s_deploy_workloads.yml's k8s module
+# and fail there with a Kubernetes API error naming a field, not the var file entry
+# that caused it.
 
 # Looping the keys, not the values, keeps a mismatched entry's own value out of the
 # loop variable, so no no_log is needed on this assert.

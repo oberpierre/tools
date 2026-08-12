@@ -113,7 +113,7 @@ app_name: my-app
 app_namespace: my-app
 
 # Optional. Registry authentication for private images. All three keys are required
-# together, or omit registry entirely to deploy public images; declaring only some of
+# together, or omit registry entirely to deploy public images. Declaring only some of
 # them, or leaving one empty, is rejected before anything is applied. Every workload's
 # pod spec gets an imagePullSecrets entry pointing at the resulting Secret when this
 # is declared. password is a plain variable name like the others below, supplied
@@ -134,8 +134,8 @@ postgres_databases:
 
 # Optional. Each entry registers an ACL user against the cluster's central Redis
 # instance. `acl` is the raw ACL rule string this application needs (key patterns and
-# command categories); this repo never assumes or writes one on your behalf. The name
-# must not be "default" and the password must not be empty.
+# command categories), because this repo never assumes or writes one on your behalf.
+# The name must not be "default" and the password must not be empty.
 redis_users:
   - name: my-app
     password: "{{ app_redis_password }}"

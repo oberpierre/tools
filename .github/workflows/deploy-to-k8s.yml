@@ -93,7 +93,7 @@ jobs:
           # always exits 0, so the host count below is what proves a real host resolved.
           host_count=$(ansible all -i inventory --list-hosts 2>/dev/null | grep -oE 'hosts \([0-9]+\)' | grep -oE '[0-9]+')
           if [ -z "$host_count" ] || [ "$host_count" -eq 0 ]; then
-            echo "ansible_inventory_content resolves to zero hosts; refusing to run against an inventory that matches no host." >&2
+            echo "ansible_inventory_content resolves to zero hosts, so this run would report success while deploying nothing. Refusing." >&2
             exit 1
           fi
           extra_vars_args=(--extra-vars "@$ANSIBLE_VAR_FILE_PATH")
