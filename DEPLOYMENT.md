@@ -61,14 +61,20 @@ In your repository, configure these secrets:
       resources: ["namespaces"]
       verbs: ["get", "create", "patch"]
     - apiGroups: ["apps", "extensions", "networking.k8s.io", ""]
-      resources:
-        - deployments
-        - services
-        - ingresses
+      resources: [deployments, services, ingresses]
       verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
     - apiGroups: [""]
       resources: ["secrets"]
       verbs: ["get", "create", "update", "patch"]
+    - apiGroups: ["batch"]
+      resources: ["cronjobs"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    - apiGroups: [""]
+      resources: ["pods"]
+      verbs: ["get"]
+    - apiGroups: [""]
+      resources: ["pods/exec"]
+      verbs: ["get"]
   ```
 
 - `SSH_PRIVATE_KEY`: The SSH private key for accessing your hosts user. Password authentication is **not** supported.
@@ -107,7 +113,7 @@ app_name: my-app
 app_namespace: my-app
 
 # Optional. Registry authentication for private images. All three keys are required
-# together, or omit registry entirely to deploy public images; declaring only some of
+# together, or omit registry entirely to deploy public images. Declaring only some of
 # them, or leaving one empty, is rejected before anything is applied. Every workload's
 # pod spec gets an imagePullSecrets entry pointing at the resulting Secret when this
 # is declared. password is a plain variable name like the others below, supplied
@@ -128,8 +134,8 @@ postgres_databases:
 
 # Optional. Each entry registers an ACL user against the cluster's central Redis
 # instance. `acl` is the raw ACL rule string this application needs (key patterns and
-# command categories); this repo never assumes or writes one on your behalf. The name
-# must not be "default" and the password must not be empty.
+# command categories), because this repo never assumes or writes one on your behalf.
+# The name must not be "default" and the password must not be empty.
 redis_users:
   - name: my-app
     password: "{{ app_redis_password }}"
@@ -184,26 +190,9 @@ workloads:
 
 Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, a non-root pod `securityContext`, `restartPolicy: OnFailure` and `concurrencyPolicy: Forbid` for CronJobs) is not settable per workload; these are the same for every workload this playbook deploys. `runAsNonRoot: true` means the container image must already run as a non-root user, or the pod fails to start.
 
-`app_db_password`, `app_redis_password`, `registry_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path, only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay omits entirely is undefined, and that failure lands differently depending on where the key is read; a key the overlay supplies as an empty string is a second, distinct failure that a guard has to check for on purpose. A missing or empty `worker_image`, `nightly_job_image`, `frontend_image` or `registry` key is caught by name in `pre_tasks:`, before anything is applied. `app_db_password` and `app_redis_password` are not checked there: an entirely missing one instead surfaces as a bare Jinja error naming the variable while `roles/app_platform` runs, because `postgres_databases` and `redis_users` are resolved as a loop list rather than read one attribute at a time; supplied but empty, the same value is caught by that role's own named assert, which already rejects a blank Postgres or Redis password.
+`app_db_password`, `app_redis_password`, `registry_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path, only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay omits entirely is undefined, and that failure lands differently depending on where the key is read; a key the overlay supplies as an empty string is a second, distinct failure that a guard has to check for on purpose. A missing or empty `worker_image`, `nightly_job_image`, `frontend_image` or `registry` key is caught by name in `pre_tasks:`, before anything is applied. `app_db_password` and `app_redis_password` are also caught by name, by `roles/app_platform`'s own `validate.yml`, whether the overlay omits the key entirely or supplies it empty: that role indexes `postgres_databases` and `redis_users` by position rather than looping the list itself, the same fix applied to the checks above, so a missing key never reaches the raw loop expression that used to raise a bare Jinja error naming only the variable.
 
-Beyond the service account rules shown in the Quick Start above, this path additionally needs:
-
-```yaml
-sa_rules:
-  - apiGroups: ["batch"]
-    resources: ["cronjobs"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["pods/exec"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["postgresql-credentials", "redis-credentials"]
-    verbs: ["get"]
-```
+This path needs no service account rules beyond the Quick Start set above; that set already covers `cronjobs`, `pods` and `pods/exec`.
 
 `cronjobs` covers creating, updating and applying the CronJob objects themselves; the wait after applying reads only Deployments, never Pods, so a CronJob's image is not checked before the schedule first fires it.
 
@@ -279,7 +268,7 @@ See also [Workflow](.github/workflows/deploy-to-k8s.yml) inputs/secrets section.
 
 | Variable                  | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Example                                                                                                                                           |
 | ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ansible_inventory_content | X        | Content of the Ansible inventory file to use for deployment.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `cluster.example.com ansible_user=deploy`                                                                                                         |
+| ansible_inventory_content | X        | Content of the Ansible inventory file to use for deployment. A value that resolves to no host (unset, empty, comments-only, or a group header with nothing under it) fails the run before `ansible-playbook` starts, naming this secret; otherwise `hosts: all` would match no host and the run would report success while deploying nothing.                                                                                                                                                                                                                                                                                                                                             | `cluster.example.com ansible_user=deploy`                                                                                                         |
 | registry_password         |          | Password for the container registry, read via `REGISTRY_PASSWORD`/`lookup('ansible.builtin.env', ...)` by the single-app Quick Start path, which is what this secret has always fed. That path's rollout wait (`readyReplicas` compared against `spec.replicas`) is satisfied by the outgoing revision's pod at `replicas: 1`, so it passes the instant the apply returns and outruns nothing; it does not wait for the new image to be pulled. The multi-workload path does not read this secret; its `registry.password` is a long-lived, read-only PAT carried in `ansible_extra_vars` instead, because a CronJob's first pull happens after a per-run token has already been revoked. | `${{ secrets.GITHUB_TOKEN }}` (single-app only)                                                                                                   |
 | ssh_known_hosts           |          | SSH known hosts content for secure connections.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Content of the known_hosts file, i.e. generated by `ssh-keyscan cluster.example.com > my_known_hosts`                                             |
 | ssh_private_key           |          | SSH private key for accessing the deployment target.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | SSH private key compatible with `webfactory/ssh-agent` action, see [Creating SSH Keys](https://github.com/webfactory/ssh-agent#creating-ssh-keys) |

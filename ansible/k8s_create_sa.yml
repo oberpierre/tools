@@ -3,16 +3,31 @@
   hosts: init_controller
 
   vars:
-    cluster_role_name: namespace-creator
+    cluster_role_name: deployment-creator
     cluster_role_binding_name: "{{ cluster_role_name }}-binding"
-    sa_name: k8s-namespace-creator
+    sa_name: k8s-deployer
     sa_namespace: kube-system
     # Define the rules for the service account see: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole
-    # below is an example for a service account that can only create namespaces
+    # below is an example for a service account that can deploy workloads as described in DEPLOYMENT.md
     sa_rules:
       - apiGroups: [""]
         resources: ["namespaces"]
-        verbs: ["create"]
+        verbs: ["get", "create", "patch"]
+      - apiGroups: ["apps", "extensions", "networking.k8s.io", ""]
+        resources: [deployments, services, ingresses]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: [""]
+        resources: ["secrets"]
+        verbs: ["get", "create", "update", "patch"]
+      - apiGroups: ["batch"]
+        resources: ["cronjobs"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get"]
+      - apiGroups: [""]
+        resources: ["pods/exec"]
+        verbs: ["get"]
     kubeconfig_output_directory: "{{ ansible_env.HOME }}/.kube"
     kubeconfig_output_path: "{{ kubeconfig_output_directory }}/kubeconfig-{{ sa_name }}.yaml"
 
