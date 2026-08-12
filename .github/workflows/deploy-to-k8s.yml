@@ -57,7 +57,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          # ansible/requirements.txt pins ansible 14, which requires 3.12 or newer,
+          # so 3.11 cannot install this workflow's own dependencies. Raising the pin
+          # here has to happen in the same change as any raise of that floor.
+          python-version: "3.12"
 
       - name: Install Ansible and dependencies
         run: |
