@@ -87,11 +87,13 @@ jobs:
           cd tools/ansible
           umask 077
           printf '%s\n' "$ANSIBLE_INVENTORY_CONTENT" > inventory
-          # An unset or blank ansible_inventory_content still writes a parseable,
-          # empty inventory: hosts: all then matches nothing and ansible-playbook
-          # exits 0 having deployed nothing. Fail before that happens.
-          if ! grep -qE '^[[:space:]]*[^#;[:space:]]' inventory; then
-            echo "ansible_inventory_content has no non-blank, non-comment line; refusing to run against an inventory that matches no host." >&2
+          # An unset, blank, comments-only or header-only ansible_inventory_content
+          # still writes a parseable, empty inventory: hosts: all then matches nothing
+          # and ansible-playbook exits 0 having deployed nothing. --list-hosts also
+          # always exits 0, so the host count below is what proves a real host resolved.
+          host_count=$(ansible all -i inventory --list-hosts 2>/dev/null | grep -oE 'hosts \([0-9]+\)' | grep -oE '[0-9]+')
+          if [ -z "$host_count" ] || [ "$host_count" -eq 0 ]; then
+            echo "ansible_inventory_content resolves to zero hosts; refusing to run against an inventory that matches no host." >&2
             exit 1
           fi
           extra_vars_args=(--extra-vars "@$ANSIBLE_VAR_FILE_PATH")
