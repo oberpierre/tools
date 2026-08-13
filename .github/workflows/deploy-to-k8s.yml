@@ -38,7 +38,7 @@ jobs:
 
     steps:
       - name: Checkout calling repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             ${{ inputs.ansible_var_file }}
@@ -46,7 +46,7 @@ jobs:
           path: app
 
       - name: Checkout tools repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: oberpierre/tools
           ref: v1
@@ -55,7 +55,7 @@ jobs:
           path: tools
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           # ansible/requirements.txt pins ansible 14, which requires 3.12 or newer,
           # so 3.11 cannot install this workflow's own dependencies. Raising the pin
@@ -74,7 +74,7 @@ jobs:
           ansible-galaxy collection install -r galaxy_requirements.yml
 
       - name: Start ssh-agent and add key
-        uses: webfactory/ssh-agent@v0.9.1
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.ssh_private_key }}
 
