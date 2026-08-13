@@ -26,9 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Run ansible-lint
-        # Pinned to match ansible/requirements.txt's ansible-lint==26.6.0, so
+        # Pinned to match ansible/requirements.txt's ansible-lint==26.8.0, so
         # CI lints with the same version as the local pre-commit gate.
-        uses: ansible/ansible-lint@v26.6.0
+        uses: ansible/ansible-lint@v26.8.0
         with:
           args: "-p *.yml"
           setup_python: "true"
