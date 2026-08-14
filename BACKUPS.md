@@ -16,7 +16,7 @@ Setup spans four playbooks, applied in this order (see the [Ansible README](ansi
 | Central **Postgres**   | Cluster roles/grants + one custom-format dump per user database | `pg_dumpall --globals-only` + `pg_dump -Fc`                                   |
 | Central **ClickHouse** | Every table's schema and data in the events database            | Network-only logical dump: `SHOW CREATE` + `SELECT … FORMAT Native` over HTTP |
 
-Every run is a **full, self-contained snapshot**, there is no incremental chain, so any single archive restores the whole store on its own. Retention keeps the newest `KEEP_LAST` (default 14); older archives are pruned.
+Every run is a **full, self-contained snapshot**, there is no incremental chain, so any single archive restores the whole store on its own. Retention keeps the newest `KEEP_LAST` (default 14), so older archives are pruned.
 
 ## How it works
 
@@ -126,11 +126,11 @@ CH_USER=clickhouse \
 
 The script creates the schema in dependency order automatically and re-injects the dictionary source password (which `SHOW CREATE` masks), so ClickHouse's dictionaries and `dictGet`-derived columns restore cleanly.
 
-> **`--live` and ClickHouse:** `MATERIALIZED` columns that call `dictGet()` are recomputed on insert. For a faithful live restore, load the dictionaries' source tables and `SYSTEM RELOAD DICTIONARIES` before inserting the dependent tables. Scratch verification is unaffected - row counts are correct regardless.
+> **`--live` and ClickHouse:** `MATERIALIZED` columns that call `dictGet()` are recomputed on insert. For a faithful live restore, load the dictionaries' source tables and `SYSTEM RELOAD DICTIONARIES` before inserting the dependent tables. Scratch verification is unaffected because row counts are correct regardless.
 
 ## Verify a backup manually
 
-**A backup you haven't restored isn't a backup.** The scratch-mode restore _is_ the verification: it pulls the latest archive, restores into a throwaway database, prints per-table row counts, and drops it, proving restorability without touching live data. This on-demand check also runs continuously, see [Automated verification & alerting](#automated-verification--alerting) below.
+**A backup you haven't restored isn't a backup.** The scratch-mode restore _is_ the verification: it pulls the latest archive, restores into a throwaway database, prints per-table row counts, and drops it, proving restorability without touching live data. This on-demand check also runs continuously. See [Automated verification & alerting](#automated-verification--alerting) below.
 
 ```bash
 # Postgres - restore latest into a scratch DB, print row counts, drop it

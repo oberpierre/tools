@@ -76,7 +76,7 @@
             prometheusSpec:
               serviceMonitorSelectorNilUsesHelmValues: false
           # Alertmanager: route the backup alerts (BackupVerifyFailed/Stale, BackupStale,
-          # *MetricsMissing) to Telegram; everything else, including the always-on Watchdog
+          # *MetricsMissing) to Telegram, whereas everything else, including the always-on Watchdog
           # heartbeat, falls through to the null sink.
           alertmanager:
             config:

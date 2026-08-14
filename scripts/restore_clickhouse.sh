@@ -98,7 +98,7 @@ chmod 600 "$tmp/client.xml"
 in_pod "$tmp/client.xml" "$cfg_pod"
 kubectl exec -c "$CH_CONTAINER" -n "$NS" "$POD" -- chmod 600 "$cfg_pod"
 
-# Small query straight through exec; file-fed statements are copied in first (below).
+# A small query goes straight through exec, whereas file-fed statements are copied in first (below).
 chq() { kubectl exec -i -c "$CH_CONTAINER" -n "$NS" "$POD" -- \
   clickhouse-client --config-file "$cfg_pod" "$@"; }
 
@@ -120,12 +120,12 @@ esac
 if [ "$MODE" = "scratch" ]; then scratch_db="$target"; fi
 echo "restoring into database '$target'"
 
-# SHOW CREATE emits the source DB name; repoint it at the target (plain global replace,
+# SHOW CREATE emits the source DB name, so repoint it at the target (plain global replace,
 # the DB name is a distinctive identifier that won't collide with other tokens). It also
 # MASKS secrets, so a dictionary's SOURCE(CLICKHOUSE(... PASSWORD ...)) comes back as
 # PASSWORD '[HIDDEN]' and the dictionary can't reload (auth fails) the moment an INSERT
 # recomputes a MATERIALIZED dictGet() column. Re-inject the real password (we connect as the
-# same user) into any PASSWORD '...'; only dictionary SOURCE clauses carry one. The password
+# same user) into any PASSWORD '...'. Only dictionary SOURCE clauses carry one. The password
 # is escaped for use as a sed replacement (\, /, & which assumes it contains no single quote).
 pw_sed="$(printf '%s' "$pw" | sed 's|[\\/&]|\\&|g')"
 rewrite() { sed -e "s/$CH_DB/$target/g" -e "s/PASSWORD '[^']*'/PASSWORD '$pw_sed'/g"; }
@@ -141,8 +141,8 @@ done <"$tmp/tables.tsv"
 # Create the schema without knowing the dependency graph. Object type implies no order here:
 # a plain table (events_v2) can depend on a dictionary via an ALIAS/MATERIALIZED dictGet(),
 # while that dictionary reads another table, so no fixed table/dict/view sequence works.
-# Instead retry the not-yet-created objects until a full pass creates nothing new; each pass
-# creates whatever now has its dependencies satisfied. Converges for any acyclic schema; a
+# Instead retry the not-yet-created objects until a full pass creates nothing new. Each pass
+# creates whatever now has its dependencies satisfied. Converges for any acyclic schema, whereas a
 # pass with zero progress means a real cycle or bad DDL, so we stop and report it.
 done_dir="$tmp/done"; mkdir "$done_dir"
 while :; do
@@ -168,7 +168,7 @@ done
 rm_pod "$rf.sql"
 
 # Load the Native data (schema-only objects namely dictionaries/views, have no .native file).
-# Streamed from the copied-in file via the pod's shell; only trusted paths/identifiers are
+# It streams from the copied-in file via the pod's shell. Only trusted paths/identifiers are
 # interpolated into the command, never the password.
 while IFS=$'\t' read -r name engine; do
   [ -n "$name" ] || continue
