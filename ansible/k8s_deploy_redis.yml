@@ -4,6 +4,7 @@
   vars:
     redis_namespace: data-services
     redis_secret_name: redis-credentials
+    redis_tailnet_hostname: redis
   vars_files:
     - vars/example_user_vault.yml
 
@@ -98,6 +99,9 @@
 
             service:
               type: ClusterIP
+              annotations:
+                tailscale.com/expose: "true"
+                tailscale.com/hostname: "{{ redis_tailnet_hostname }}"
 
           metrics:
             enabled: true

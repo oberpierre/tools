@@ -1,0 +1,82 @@
+---
+- name: Deploying Tailscale operator
+  hosts: init_controller
+  vars:
+    tailscale_namespace: tailscale
+    tailscale_proxy_class_name: tailnet-proxy
+  vars_files:
+    - vars/example_user_vault.yml
+
+  roles:
+    - helm
+
+  tasks:
+    - name: Creating namespace {{ tailscale_namespace }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ tailscale_namespace }}"
+
+    - name: Creating Tailscale operator OAuth secret
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: operator-oauth
+            namespace: "{{ tailscale_namespace }}"
+          type: Opaque
+          data:
+            client_id: "{{ vault_tailscale_oauth_client_id | b64encode }}"
+            client_secret: "{{ vault_tailscale_oauth_client_secret | b64encode }}"
+      no_log: true
+
+    - name: Installing/Upgrading Tailscale operator
+      kubernetes.core.helm:
+        name: tailscale-operator
+        chart_repo_url: https://pkgs.tailscale.com/helmcharts
+        chart_ref: tailscale-operator
+        chart_version: "1.102.2"
+        release_namespace: "{{ tailscale_namespace }}"
+        state: present
+        values:
+          # oauth.clientId/oauth.clientSecret are left unset so the operator mounts the
+          # Secret created above instead of storing the credential in the release, where
+          # `helm get values` would read it back.
+          operatorConfig:
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 256Mi
+          proxyConfig:
+            defaultProxyClass: "{{ tailscale_proxy_class_name }}"
+
+    - name: Applying Tailscale ProxyClass {{ tailscale_proxy_class_name }}
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: tailscale.com/v1alpha1
+          kind: ProxyClass
+          metadata:
+            name: "{{ tailscale_proxy_class_name }}"
+          spec:
+            statefulSet:
+              pod:
+                tailscaleContainer:
+                  # Without a request/limit here the proxy pod is BestEffort and is the
+                  # first thing evicted under node memory pressure, taking the tunnel
+                  # down silently.
+                  resources:
+                    requests:
+                      cpu: 50m
+                      memory: 64Mi
+                    limits:
+                      cpu: 200m
+                      memory: 128Mi
