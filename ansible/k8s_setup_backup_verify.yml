@@ -28,7 +28,7 @@
             secret: postgresql-credentials
             key: postgres-password
           # Restoring + asserting (driving the pod via kubectl). VERIFY_DB picks the database whose
-          # per-DB dump is round-tripped into the scratch DB; the central Postgres may hold several.
+          # per-DB dump is round-tripped into the scratch DB, because the central Postgres may hold several.
           - name: PG_NAMESPACE
             value: data-services
           - name: PG_POD

@@ -90,7 +90,7 @@ age -d -i "$AGE_IDENTITY" "$tmp/$ARCHIVE" | tar -C "$tmp" -xzf -
 pgpw="$(kubectl get secret "$PG_SECRET" -n "$NS" -o jsonpath="{.data.$PG_SECRET_KEY}" | base64 -d)"
 
 # Put the password in a .pgpass copied into the pod (chmod 600) rather than on the exec argv, so it
-# never appears in the exec request or in `ps`. A *:*:*:*:PW line matches any connection; the : and
+# never appears in the exec request or in `ps`. A *:*:*:*:PW line matches any connection. The : and
 # \ that .pgpass treats specially are escaped.
 pgpass_pod="/tmp/pgpass-$$"
 printf '*:*:*:*:%s\n' "$(printf '%s' "$pgpw" | sed 's/[\\:]/\\&/g')" >"$tmp/pgpass"
@@ -105,14 +105,14 @@ kexec() { kubectl exec -i -c "$PG_CONTAINER" -n "$NS" "$POD" -- env PGPASSFILE="
 # pg_restore does not stop on error by default (no --exit-on-error): it restores everything it can,
 # skips only the items that error, and exits non-zero to report that some errors were ignored. Those
 # are usually benign (an ignorable COMMENT, a grant to a role that predates the dump), and the rest
-# of the restore still happened, so we surface each as a WARNING but do NOT fail the run over it; you
+# of the restore still happened, so we surface each as a WARNING but do NOT fail the run over it. You
 # can re-run '--db <name>' for any database that needs a clean retry.
 fail=0
 if [ "$MODE" = "all" ]; then
   [ -f "$tmp/globals.sql" ] || { echo "error: globals.sql not in archive" >&2; exit 1; }
   echo "restoring roles/grants + every database into $NS/$POD (original names)"
   # Roles/grants first, so object ownership restores faithfully. Some roles (e.g. the Bitnami
-  # defaults) may already exist; psql prints those errors but keeps going and exits 0 (no
+  # defaults) may already exist, so psql prints those errors but keeps going and exits 0 (no
   # ON_ERROR_STOP), so a non-zero exit here is a real failure that set -e should stop on.
   kubectl cp "$tmp/globals.sql" "$NS/$POD:/tmp/globals-$$.sql" -c "$PG_CONTAINER"
   kexec psql -U "$SUPERUSER" -d postgres -f "/tmp/globals-$$.sql"

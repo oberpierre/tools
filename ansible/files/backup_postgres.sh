@@ -12,7 +12,7 @@ set -eu
 : "${AGE_RECIPIENT:?}" "${RCLONE_REMOTE:?}" "${KEEP_LAST:?}"
 export PGPASSWORD
 
-# The postgres:*-alpine image ships the matching pg_dump; age/rclone/curl are
+# The postgres:*-alpine image ships the matching pg_dump, whereas age/rclone/curl are
 # added here so no bespoke backup image has to be built and pushed.
 apk add --no-cache age rclone curl >/dev/null
 
@@ -22,8 +22,8 @@ trap 'rm -rf "$work" "/tmp/postgres-$ts.tar.gz.age"' EXIT
 
 pg_dumpall -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" --globals-only >"$work/globals.sql"
 
-# postgres/template DBs hold no app data; backup_verify% are the verify CronJobs' scratch DBs. Assign
-# the list rather than `psql | while` - a psql failure in that pipe is invisible to set -e.
+# postgres/template DBs hold no app data. backup_verify% are the verify CronJobs' scratch DBs. Assign
+# the list rather than `psql | while`, because a psql failure in that pipe is invisible to set -e.
 dbs=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -d postgres -Atqc \
   "SELECT datname FROM pg_database
      WHERE datistemplate = false AND datname <> 'postgres' AND datname NOT LIKE 'backup_verify%'")

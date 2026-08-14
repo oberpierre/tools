@@ -4,7 +4,7 @@
   vars:
     clickhouse_namespace: data-services
     clickhouse_secret_name: clickhouse-credentials
-    # ClickHouse shard count. 1 suits a single node; multi-node clusters can raise it to spread
+    # ClickHouse shard count. 1 suits a single node, whereas multi-node clusters can raise it to spread
     # data (the backup dumps via the clickhouse Service, so >1 shard needs a shard-aware backup).
     clickhouse_shards: 1
   vars_files:
@@ -56,7 +56,7 @@
             size: 8Gi
             storageClass: longhorn
 
-          # ClickHouse Keeper (the default coordination layer) provisions its own PVCs; pin them to
+          # ClickHouse Keeper (the default coordination layer) provisions its own PVCs, so pin them to
           # longhorn too, otherwise they fall back to the cluster default storage class.
           keeper:
             persistence:

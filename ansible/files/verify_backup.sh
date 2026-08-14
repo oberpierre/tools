@@ -100,7 +100,7 @@ case "$STORE" in
     pw="$(kubectl get secret postgresql-credentials -n "$PG_NAMESPACE" -o jsonpath='{.data.postgres-password}' | base64 -d)"
 
     # Put the password in a .pgpass copied into the pod (chmod 600) rather than on the exec argv, so
-    # it never appears in the exec request or in `ps`. A *:*:*:*:PW line matches any connection; the
+    # it never appears in the exec request or in `ps`. A *:*:*:*:PW line matches any connection. The
     # : and \ that .pgpass treats specially are escaped.
     pgpass_pod="/tmp/pgpass-verify-$$"
     printf '*:*:*:*:%s\n' "$(printf '%s' "$pw" | sed 's/[\\:]/\\&/g')" >"$work/pgpass"
@@ -148,7 +148,7 @@ case "$STORE" in
 
     # Count rows only over the tables the backup actually dumps (the data-bearing ones). A loaded
     # dictionary reports its element count in total_rows, and .inner MV tables hold rows too, but the
-    # dump skips both as schema-only; including them here would make the live source out-count the
+    # dump skips both as schema-only, because including them here would make the live source out-count the
     # restored scratch and fail the assertion on a good backup. Baseline before the backup runs.
     ch_row_filter="name NOT LIKE '.inner%' AND engine NOT LIKE '%View' AND engine != 'Dictionary'"
     source_rows="$(chq "SELECT sum(total_rows) FROM system.tables WHERE database = '$CH_DB' AND $ch_row_filter")"
@@ -177,7 +177,7 @@ case "${rows:-0}" in ''|*[!0-9]*) rows=0 ;; esac
 case "${source_rows:-0}" in ''|*[!0-9]*) source_rows=0 ;; esac
 # A faithful restore reproduces the source, so require the scratch DB to hold at least ~90% of the
 # live source's rows. The slack absorbs rows written between the baseline count and the backup
-# snapshot; an empty source (0 rows) restores to 0 and passes, so a brand-new deployment with no
+# snapshot. An empty source (0 rows) restores to 0 and passes, so a brand-new deployment with no
 # traffic yet is not flagged as a failure.
 if [ "$((rows * 10))" -lt "$((source_rows * 9))" ]; then
   echo "assertion failed: $STORE restored $rows rows but the live source holds $source_rows" >&2

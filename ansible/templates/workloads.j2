@@ -69,7 +69,7 @@ spec:
           # before the Job is left for the next schedule tick. The backup and verify
           # CronJobs use Never and get a fresh Pod per attempt instead, because those
           # are two scripts this repo owns and knows are safe to rerun from a blank
-          # Pod; a workload's image here is application code this platform does not
+          # Pod, whereas a workload's image here is application code this platform does not
           # control, so a cheap in-place retry is the safer default.
           restartPolicy: OnFailure
           securityContext:

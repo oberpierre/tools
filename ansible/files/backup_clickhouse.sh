@@ -24,7 +24,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work" "/tmp/clickhouse-$ts.tar.gz.age"' EXIT
 mkdir "$work/schema" "$work/data"
 
-# name<TAB>engine for every object; the engine decides whether it stores rows.
+# name<TAB>engine for every object, because the engine decides whether it stores rows.
 chq "SELECT name, engine FROM system.tables WHERE database = '$CH_DB' AND name NOT LIKE '.inner%' ORDER BY name FORMAT TabSeparated" \
   >"$work/tables.tsv"
 
