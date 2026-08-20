@@ -22,8 +22,8 @@
       - apiGroups: ["batch"]
         resources: ["cronjobs"]
         verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    # Pod exec grants a projected token for whatever pod it targets, so they are scoped
-    # per namespace here rather than folded into the cluster-wide sa_rules above.
+    # Pod exec grants a projected token for whatever pod it targets, so these rules are
+    # scoped per namespace here rather than folded into the cluster-wide sa_rules above.
     sa_namespaced_rules:
       data-services:
         - apiGroups: [""]
@@ -65,6 +65,16 @@
             apiGroup: rbac.authorization.k8s.io
             kind: ClusterRole
             name: "{{ cluster_role_name }}"
+
+    - name: Creating namespace for each namespaced rule
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item }}"
+      loop: "{{ sa_namespaced_rules.keys() | list }}"
 
     - name: Creating namespaced Role and RoleBinding for pod exec access
       kubernetes.core.k8s:

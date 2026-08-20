@@ -205,7 +205,7 @@ This path needs no service account rules beyond the Quick Start set above, becau
 
 Kubernetes derives a subresource's RBAC verb from the HTTP method: a client that GETs needs `get`, and one that POSTs needs `create`. This path execs a pod in exactly one way, `kubernetes.core.k8s_exec`, which GETs, so `pods/exec` here needs only `get`. `kubectl exec` POSTs to the same endpoint and needs `create`; that is why the backup-verify CronJob's own Role (`ansible/k8s_setup_backup_verify.yml`) grants `create` instead, for a different ServiceAccount in `backups_namespace` (`ansible/templates/verify_cronjob.j2` sets `serviceAccountName: {{ verify_service_account }}`), a different identity with a Role of its own, not this one.
 
-To check the grant: `kubectl auth can-i get pods/exec -n <namespace> --as=<service account>`. If exec starts returning 403 despite this grant, the client changed which HTTP method it uses, and the fix is to add `create`.
+`pods` and `pods/exec` are granted only inside `data-services`, not cluster-wide, since exec into a pod yields that pod's projected token. To check the grant: `kubectl auth can-i get pods/exec -n data-services --as=<service account>`; the same query against any other namespace should answer no. If exec starts returning 403 despite this grant, the client changed which HTTP method it uses, and the fix is to add `create`.
 
 `pods get` is not exercised by anything in `roles/app_platform` today: `k8s_exec` only reads the pod itself when its caller omits `container:`, and every call here sets it explicitly. The grant stays for a future `k8s_exec` call that does not.
 
