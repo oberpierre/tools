@@ -69,12 +69,19 @@ In your repository, configure these secrets:
     - apiGroups: ["batch"]
       resources: ["cronjobs"]
       verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-    - apiGroups: [""]
-      resources: ["pods"]
-      verbs: ["get"]
-    - apiGroups: [""]
-      resources: ["pods/exec"]
-      verbs: ["get"]
+  ```
+
+  Pod exec is scoped to the `data-services` namespace rather than granted cluster-wide, since exec into any pod yields that pod's projected token. `k8s_create_sa.yml`'s `sa_namespaced_rules` default already grants it there:
+
+  ```yaml
+  sa_namespaced_rules:
+    data-services:
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get"]
+      - apiGroups: [""]
+        resources: ["pods/exec"]
+        verbs: ["get"]
   ```
 
 - `SSH_PRIVATE_KEY`: The SSH private key for accessing your hosts user. Password authentication is **not** supported.

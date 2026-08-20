@@ -22,12 +22,16 @@
       - apiGroups: ["batch"]
         resources: ["cronjobs"]
         verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-      - apiGroups: [""]
-        resources: ["pods"]
-        verbs: ["get"]
-      - apiGroups: [""]
-        resources: ["pods/exec"]
-        verbs: ["get"]
+    # Pod exec grants a projected token for whatever pod it targets, so they are scoped
+    # per namespace here rather than folded into the cluster-wide sa_rules above.
+    sa_namespaced_rules:
+      data-services:
+        - apiGroups: [""]
+          resources: ["pods"]
+          verbs: ["get"]
+        - apiGroups: [""]
+          resources: ["pods/exec"]
+          verbs: ["get"]
     kubeconfig_output_directory: "{{ ansible_env.HOME }}/.kube"
     kubeconfig_output_path: "{{ kubeconfig_output_directory }}/kubeconfig-{{ sa_name }}.yaml"
 
@@ -61,6 +65,35 @@
             apiGroup: rbac.authorization.k8s.io
             kind: ClusterRole
             name: "{{ cluster_role_name }}"
+
+    - name: Creating namespaced Role and RoleBinding for pod exec access
+      kubernetes.core.k8s:
+        state: present
+        definition: |-
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: "{{ cluster_role_name }}-{{ item.key }}"
+            namespace: "{{ item.key }}"
+          rules:
+            {{ item.value | to_nice_yaml(indent=2) | indent(2) | trim }}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: "{{ cluster_role_binding_name }}-{{ item.key }}"
+            namespace: "{{ item.key }}"
+          subjects:
+            - kind: ServiceAccount
+              name: "{{ sa_name }}"
+              namespace: "{{ sa_namespace }}"
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: "{{ cluster_role_name }}-{{ item.key }}"
+      loop: "{{ sa_namespaced_rules | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
 
     - name: Setting ServiceAccount's secret name
       ansible.builtin.set_fact:
