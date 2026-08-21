@@ -22,12 +22,16 @@
       - apiGroups: ["batch"]
         resources: ["cronjobs"]
         verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-      - apiGroups: [""]
-        resources: ["pods"]
-        verbs: ["get"]
-      - apiGroups: [""]
-        resources: ["pods/exec"]
-        verbs: ["get"]
+    # Pod exec grants a projected token for whatever pod it targets, so these rules are
+    # scoped per namespace here rather than folded into the cluster-wide sa_rules above.
+    sa_namespaced_rules:
+      data-services:
+        - apiGroups: [""]
+          resources: ["pods"]
+          verbs: ["get"]
+        - apiGroups: [""]
+          resources: ["pods/exec"]
+          verbs: ["get"]
     kubeconfig_output_directory: "{{ ansible_env.HOME }}/.kube"
     kubeconfig_output_path: "{{ kubeconfig_output_directory }}/kubeconfig-{{ sa_name }}.yaml"
 
@@ -61,6 +65,76 @@
             apiGroup: rbac.authorization.k8s.io
             kind: ClusterRole
             name: "{{ cluster_role_name }}"
+
+    - name: Creating namespace for each namespaced rule
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item }}"
+      loop: "{{ sa_namespaced_rules.keys() | list }}"
+
+    - name: Creating namespaced Role and RoleBinding for pod exec access
+      kubernetes.core.k8s:
+        state: present
+        definition: |-
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: "{{ cluster_role_name }}-{{ item.key }}"
+            namespace: "{{ item.key }}"
+            labels:
+              app.kubernetes.io/managed-by: "{{ cluster_role_name }}"
+          rules:
+            {{ item.value | to_nice_yaml(indent=2) | indent(2) | trim }}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: "{{ cluster_role_binding_name }}-{{ item.key }}"
+            namespace: "{{ item.key }}"
+            labels:
+              app.kubernetes.io/managed-by: "{{ cluster_role_name }}"
+          subjects:
+            - kind: ServiceAccount
+              name: "{{ sa_name }}"
+              namespace: "{{ sa_namespace }}"
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: "{{ cluster_role_name }}-{{ item.key }}"
+      loop: "{{ sa_namespaced_rules | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    # ClusterRole rules self-clean on re-apply (a list with no patchMergeKey replaces
+    # wholesale), but a namespaced Role/RoleBinding is its own object, so a namespace
+    # dropped from sa_namespaced_rules would otherwise keep its grant forever. The label
+    # is how this task finds only the objects it created, never a hand-authored Role.
+    - name: Discovering namespaced Roles and RoleBindings this playbook manages
+      kubernetes.core.k8s_info:
+        api_version: rbac.authorization.k8s.io/v1
+        kind: "{{ item }}"
+        label_selectors:
+          - "app.kubernetes.io/managed-by={{ cluster_role_name }}"
+      loop: [Role, RoleBinding]
+      loop_control:
+        label: "{{ item }}"
+      register: managed_namespaced_rbac
+
+    - name: Removing namespaced Role/RoleBinding for a namespace no longer in sa_namespaced_rules
+      kubernetes.core.k8s:
+        state: absent
+        api_version: rbac.authorization.k8s.io/v1
+        kind: "{{ item.kind }}"
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ item.metadata.namespace }}"
+      loop: "{{ managed_namespaced_rbac.results | map(attribute='resources') | flatten }}"
+      loop_control:
+        label: "{{ item.kind }}/{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+      when: item.metadata.namespace not in (sa_namespaced_rules.keys() | list)
 
     - name: Setting ServiceAccount's secret name
       ansible.builtin.set_fact:
