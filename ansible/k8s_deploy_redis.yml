@@ -40,6 +40,7 @@
         name: redis
         chart_repo_url: https://charts.bitnami.com/bitnami
         chart_ref: redis
+        chart_version: 28.0.2
         release_namespace: "{{ redis_namespace }}"
         state: present
         values:
