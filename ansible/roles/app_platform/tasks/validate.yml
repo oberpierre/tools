@@ -148,13 +148,13 @@
       - item.key is match('^[A-Za-z0-9._/-]+\Z')
       - (item.key.split('/') | last | length) <= 63
       - item.key.split('/') | length <= 2
-      - (item.key.split('/') | last | length) >= 1
+      - item.key.split('/') | map('length') | min >= 1
     fail_msg: >-
       workload {{ item.workload }} declares ingress.annotations key
       "{{ item.key }}" that fails the syntax check: a key must be non-empty,
       contain no whitespace, use only [A-Za-z0-9._/-], contain at most one /,
-      and have a non-empty segment after its last / (or be non-empty itself
-      when it has none) that is 63 characters or fewer.
+      have every segment non-empty, and have its segment after the last /
+      63 characters or fewer.
     quiet: true
   loop: "{{ app_platform_annotation_pairs | default([]) }}"
   loop_control:
