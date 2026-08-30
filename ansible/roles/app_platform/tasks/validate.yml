@@ -111,7 +111,7 @@
     label: "{{ workloads[item].name | default('(unnamed)') }}"
   when: workloads[item].ingress is defined and workloads[item].ingress.annotations is defined
 
-# Flattened once so the two per-key checks below loop (workload, key) pairs
+# Flattened once so the per-key checks below loop (workload, key) pairs
 # directly: an assert task takes one loop, not one per workload times one per key.
 - name: Flattening workload ingress.annotations into (workload, key) pairs
   ansible.builtin.set_fact:
@@ -126,16 +126,35 @@
     label: "{{ workloads[item].name | default('(unnamed)') }}"
   when: workloads[item].ingress is defined and workloads[item].ingress.annotations is defined
 
+# Placed ahead of the syntax check below: item.key.split('/') there raises an
+# unhandled AnsibleUndefinedVariable on a non-string key instead of this file's
+# own fail_msg, so a non-string key must be caught by name first.
+- name: Rejecting a workload ingress.annotations key that is not a string
+  ansible.builtin.assert:
+    that:
+      - item.key is string
+    fail_msg: >-
+      workload {{ item.workload }} declares ingress.annotations key
+      "{{ item.key }}" that is not a string. Annotation keys must be strings.
+      Quote the key in the var file.
+    quiet: true
+  loop: "{{ app_platform_annotation_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
 - name: Rejecting a workload ingress.annotations key that fails the syntax check
   ansible.builtin.assert:
     that:
-      - item.key is match('^[A-Za-z0-9._/-]+$')
+      - item.key is match('^[A-Za-z0-9._/-]+\Z')
       - (item.key.split('/') | last | length) <= 63
+      - item.key.split('/') | length <= 2
+      - (item.key.split('/') | last | length) >= 1
     fail_msg: >-
       workload {{ item.workload }} declares ingress.annotations key
       "{{ item.key }}" that fails the syntax check: a key must be non-empty,
-      contain no whitespace, use only [A-Za-z0-9._/-], and the segment after
-      its last / must be 63 characters or fewer.
+      contain no whitespace, use only [A-Za-z0-9._/-], contain at most one /,
+      and have a non-empty segment after its last / (or be non-empty itself
+      when it has none) that is 63 characters or fewer.
     quiet: true
   loop: "{{ app_platform_annotation_pairs | default([]) }}"
   loop_control:
@@ -151,7 +170,7 @@
     fail_msg: >-
       workload {{ item.workload }} declares ingress.annotations key
       "{{ item.key }}" with a value that is not a string. Annotation values
-      must be strings; quote the value in the var file.
+      must be strings. Quote the value in the var file.
     quiet: true
   loop: "{{ app_platform_annotation_pairs | default([]) }}"
   loop_control:

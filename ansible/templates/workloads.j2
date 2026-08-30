@@ -119,7 +119,7 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: {{ cluster_issuer_name | default("letsencrypt-prod") }}
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    {% if workload.ingress.annotations is defined %}
+    {% if workload.ingress.annotations is defined and workload.ingress.annotations | length > 0 %}
     {{ workload.ingress.annotations | to_nice_yaml(indent=2) | indent(4) }}
     {% endif %}
 spec:
