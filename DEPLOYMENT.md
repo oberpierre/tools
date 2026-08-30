@@ -193,7 +193,13 @@ workloads:
       port: 8000
     ingress:
       hosts: [my-app.example.com]
+      annotations: # optional, merged alongside the platform's own two below
+        nginx.ingress.kubernetes.io/auth-type: basic
+        nginx.ingress.kubernetes.io/auth-secret: my-app-admin-auth
+        nginx.ingress.kubernetes.io/auth-realm: "My App admin"
 ```
+
+`annotations` accepts any ingress-nginx key, merged into the rendered Ingress. Some keys are rejected: `cert-manager.io/cluster-issuer` and `nginx.ingress.kubernetes.io/ssl-redirect` are the platform's own two, and some more are rejected because they inject raw nginx configuration or collide with the ingress class this template already sets (e.g. `nginx.ingress.kubernetes.io/auth-snippet`). Every value must also already be a string: quoting a value like `basic` is safe, but an unquoted `true` or a bare number is rejected.
 
 Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, a non-root pod `securityContext`, `restartPolicy: OnFailure` and `concurrencyPolicy: Forbid` for CronJobs) is not settable per workload, because these are the same for every workload this playbook deploys. `runAsNonRoot: true` means the container image must already run as a non-root user, or the pod fails to start.
 
