@@ -141,6 +141,22 @@
   loop_control:
     label: "{{ item.workload }}/{{ item.key }}"
 
+# Annotations are map[string]string, so an unquoted true/false/no/yes or a bare
+# number parses as a YAML scalar of the wrong type. The check rejects instead
+# of stringifying it, because coercing would apply a value the author never wrote.
+- name: Rejecting a workload ingress.annotations value that is not a string
+  ansible.builtin.assert:
+    that:
+      - item.value is string
+    fail_msg: >-
+      workload {{ item.workload }} declares ingress.annotations key
+      "{{ item.key }}" with a value that is not a string. Annotation values
+      must be strings; quote the value in the var file.
+    quiet: true
+  loop: "{{ app_platform_annotation_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
 # One shared ingress-nginx controller serves every Ingress on this cluster, so a
 # snippet annotation slipped into one app's var file is not scoped to that app alone.
 - name: Rejecting a workload ingress.annotations key that is reserved
