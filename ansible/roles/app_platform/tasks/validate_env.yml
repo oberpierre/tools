@@ -85,7 +85,7 @@
     app_platform_env_from_keys: >-
       {{ app_platform_env_from_keys | default([]) +
          [ {'workload': item.0.name, 'secret': item.1, 'keys': app_secrets[item.1].keys() | list} ] }}
-  loop: "{{ workloads | subelements('env_from', skip_missing=True) }}"
+  loop: "{{ workloads | default([]) | subelements('env_from', skip_missing=True) }}"
   loop_control:
     label: "{{ item.0.name }}/{{ item.1 }}"
   when: item.1 in (app_secrets | default({})) and app_secrets[item.1] is mapping
