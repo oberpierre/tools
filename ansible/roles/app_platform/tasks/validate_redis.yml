@@ -1,0 +1,50 @@
+---
+# The loop is over the index, not the list itself: indexing resolves each entry's
+# fields one at a time, so a key an overlay never supplied only breaks that entry's
+# own lookup instead of raising eagerly for the whole list before any assert here
+# gets to name which entry was wrong.
+
+# A missing name makes the reserved-name check below raise deep inside a dict
+# lookup rather than naming the entry, whereas a blank name passes that check
+# silently and only fails once Redis rejects it. Both are caught here first.
+- name: Rejecting a Redis user entry with no usable name
+  ansible.builtin.assert:
+    that:
+      - redis_users[item].name is defined
+      - (redis_users[item].name | trim) != ''
+    fail_msg: >-
+      redis_users[{{ item }}] has no name, or its name is blank after trimming.
+      Every redis_users entry must declare a non-blank name.
+    quiet: true
+  loop: "{{ range(redis_users | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ redis_users[item].name | default('(unnamed)') }}"
+
+- name: Rejecting a Redis user named default
+  ansible.builtin.assert:
+    that:
+      - redis_users[item].name != 'default'
+    fail_msg: >-
+      redis_users declares a user named "default" which is reserved for Redis's
+      administrative identity. Apps may not declare a user with this name.
+      Rename this entry.
+    quiet: true
+  loop: "{{ range(redis_users | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ redis_users[item].name | default('(unnamed)') }}"
+
+- name: Rejecting an empty or whitespace-only Redis user password
+  ansible.builtin.assert:
+    that:
+      # default('', true) also substitutes for an explicit null, which default('')
+      # alone would pass through as the literal string "None".
+      - (redis_users[item].password | default('', true) | trim) != ''
+    fail_msg: >-
+      redis_users entry {{ redis_users[item].name | default('(unnamed)') }} declares
+      an empty or whitespace-only password, which would result in a no-password
+      Redis user. Apps must supply a real password. Provide a password or fix
+      whatever environment variable was meant to hold it.
+    quiet: true
+  loop: "{{ range(redis_users | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ redis_users[item].name | default('(unnamed)') }}"

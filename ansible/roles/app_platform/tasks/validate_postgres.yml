@@ -1,0 +1,41 @@
+---
+# Same defect as the Redis check above: a missing user raises inside the
+# reserved-name check below, and a blank one passes it silently and only fails once
+# Postgres rejects it.
+- name: Rejecting a Postgres database entry with no usable user
+  ansible.builtin.assert:
+    that:
+      - postgres_databases[item].user is defined
+      - (postgres_databases[item].user | trim) != ''
+    fail_msg: >-
+      postgres_databases[{{ item }}] has no user, or its user is blank after
+      trimming. Every postgres_databases entry must declare a non-blank user.
+    quiet: true
+  loop: "{{ range(postgres_databases | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ postgres_databases[item].user | default('(unnamed)') }}"
+
+- name: Rejecting a Postgres role named postgres
+  ansible.builtin.assert:
+    that:
+      - postgres_databases[item].user != 'postgres'
+    fail_msg: >-
+      postgres_databases declares a role named "postgres", which is reserved for the Postgres
+      administrative identity. Apps must not declare a role with this name. Rename this entry.
+    quiet: true
+  loop: "{{ range(postgres_databases | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ postgres_databases[item].user | default('(unnamed)') }}"
+
+- name: Rejecting an empty or whitespace-only Postgres role password
+  ansible.builtin.assert:
+    that:
+      - (postgres_databases[item].password | default('', true) | trim) != ''
+    fail_msg: >-
+      postgres_databases entry {{ postgres_databases[item].user | default('(unnamed)') }} declares an
+      empty or whitespace-only password. Apps must supply a real password. Provide
+      a password or fix whatever environment variable was meant to hold it.
+    quiet: true
+  loop: "{{ range(postgres_databases | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ postgres_databases[item].user | default('(unnamed)') }}"
