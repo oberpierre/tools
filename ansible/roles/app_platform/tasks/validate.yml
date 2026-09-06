@@ -12,5 +12,8 @@
 - name: Validating the declared workload ingress annotations
   ansible.builtin.include_tasks: validate_ingress.yml
 
+- name: Validating the declared workload environment variables
+  ansible.builtin.include_tasks: validate_env.yml
+
 - name: Validating the declared application Secrets
   ansible.builtin.include_tasks: validate_secrets.yml

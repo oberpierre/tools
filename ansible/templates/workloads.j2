@@ -39,6 +39,13 @@ spec:
                 name: {{ secret_name }}
             {% endfor %}
           {% endif %}
+          {% if workload.env is defined and workload.env | length > 0 %}
+          env:
+            {% for env_name, env_value in workload.env.items() %}
+            - name: {{ env_name | to_json }}
+              value: {{ env_value | to_json }}
+            {% endfor %}
+          {% endif %}
           {% if workload.resources is defined %}
           resources:
             {{ workload.resources | to_nice_yaml(indent=2) | indent(12) }}
@@ -83,6 +90,13 @@ spec:
                 {% for secret_name in workload.env_from %}
                 - secretRef:
                     name: {{ secret_name }}
+                {% endfor %}
+              {% endif %}
+              {% if workload.env is defined and workload.env | length > 0 %}
+              env:
+                {% for env_name, env_value in workload.env.items() %}
+                - name: {{ env_name | to_json }}
+                  value: {{ env_value | to_json }}
                 {% endfor %}
               {% endif %}
               {% if workload.resources is defined %}

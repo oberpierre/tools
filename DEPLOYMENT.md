@@ -171,6 +171,9 @@ workloads:
     image: "{{ worker_image }}"
     replicas: 1
     env_from: [my-app-postgres, my-app-redis] # Secret names above, applied as envFrom
+    env: # optional; non-secret values, rendered verbatim
+      LOG_LEVEL: info
+      SCRAPE_TIMEOUT_SECONDS: "30"
     resources:
       requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: 500m, memory: 512Mi }
@@ -200,6 +203,8 @@ workloads:
 ```
 
 `annotations` accepts any ingress-nginx key, merged into the rendered Ingress. Some keys are rejected: `cert-manager.io/cluster-issuer` and `nginx.ingress.kubernetes.io/ssl-redirect` are the platform's own two, and some more are rejected because they inject raw nginx configuration or collide with the ingress class this template already sets (e.g. `nginx.ingress.kubernetes.io/auth-snippet`). Every value must also already be a string: quoting a value like `basic` is safe, but an unquoted `true` or a bare number is rejected.
+
+`env` is for non-secret configuration a container reads at startup: log levels, timeouts, feature flags, the hostnames and port numbers of things the cluster already exposes. Its values are committed in plain text in the var file and readable from the Pod spec by anyone who can `get pod -o yaml` in the namespace, so a credential belongs in `app_secrets` and reaches the container through `env_from` instead. A name declared in both `env` and one of that workload's `env_from` Secrets is rejected, because Kubernetes would otherwise resolve the collision silently.
 
 Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, a non-root pod `securityContext`, `restartPolicy: OnFailure` and `concurrencyPolicy: Forbid` for CronJobs) is not settable per workload, because these are the same for every workload this playbook deploys. `runAsNonRoot: true` means the container image must already run as a non-root user, or the pod fails to start.
 

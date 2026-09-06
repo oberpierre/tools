@@ -3,7 +3,7 @@
 # that gets one list wrong cannot have the other list's k8s_exec calls run before the
 # whole file has been checked. Namespace next so nothing else races it; secrets last
 # since they depend on the credentials the middle two steps just registered.
-- name: Validating the declared registrations and ingress annotations
+- name: Validating the declared registrations, ingress annotations and workload environment
   ansible.builtin.include_tasks: validate.yml
 
 - name: Creating the application namespace
