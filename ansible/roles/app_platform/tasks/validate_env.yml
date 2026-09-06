@@ -30,9 +30,10 @@
     label: "{{ workloads[item].name | default('(unnamed)') }}"
   when: workloads[item].env is defined
 
-# Placed ahead of the syntax check below: item.key.split('/') there raises an
-# unhandled AnsibleUndefinedVariable on a non-string key instead of this file's
-# own fail_msg, so a non-string key must be caught by name first.
+# Placed ahead of the syntax check below so a non-string key is named as such,
+# rather than falling through to the syntax check's generic message: match()
+# returns false rather than raising on a non-string key, so this ordering is
+# for a clearer message, not to prevent a crash.
 - name: Rejecting a workload env key that is not a string
   ansible.builtin.assert:
     that:
@@ -62,7 +63,7 @@
 
 # env values reach the Pod spec as literal strings, so an unquoted true, no or a
 # bare number is a YAML scalar of the wrong type and the API rejects the whole Pod
-# spec. Rejected rather than coerced, for the same reason as the ingress check.
+# spec.
 - name: Rejecting a workload env value that is not a string
   ansible.builtin.assert:
     that:
@@ -76,20 +77,18 @@
   loop_control:
     label: "{{ item.workload }}/{{ item.key }}"
 
-# Only an env_from entry naming a Secret app_secrets actually declares is
-# considered: one naming an undeclared Secret is a separate, uncaught gap.
-- name: Flattening each workload's env_from-supplied variable names into (workload, key, secret) triples
+# Only an env_from entry naming a Secret app_secrets actually declares, as a mapping,
+# is considered: one naming an undeclared Secret, or one whose value is malformed, is a
+# separate gap validate.yml's later includes catch or leave uncaught, not this one's.
+- name: Flattening each workload's env_from Secret names into (workload, secret, keys) triples
   ansible.builtin.set_fact:
-    app_platform_env_from_pairs: >-
-      {{ app_platform_env_from_pairs | default([]) +
-         (app_secrets[item.1]
-          | dict2items
-          | map('combine', {'workload': item.0.name, 'secret': item.1})
-          | list) }}
+    app_platform_env_from_keys: >-
+      {{ app_platform_env_from_keys | default([]) +
+         [ {'workload': item.0.name, 'secret': item.1, 'keys': app_secrets[item.1].keys() | list} ] }}
   loop: "{{ workloads | subelements('env_from', skip_missing=True) }}"
   loop_control:
     label: "{{ item.0.name }}/{{ item.1 }}"
-  when: item.1 in (app_secrets | default({}))
+  when: item.1 in (app_secrets | default({})) and app_secrets[item.1] is mapping
 
 # Kubernetes lets env silently win over envFrom whatever order the two blocks
 # appear in, so a name declared in both is rejected rather than resolved for
@@ -106,10 +105,10 @@
     quiet: true
   vars:
     app_platform_env_from_collision: >-
-      {{ app_platform_env_from_pairs
+      {{ app_platform_env_from_keys
          | default([])
          | selectattr('workload', 'equalto', item.workload)
-         | selectattr('key', 'equalto', item.key)
+         | selectattr('keys', 'contains', item.key)
          | list }}
   loop: "{{ app_platform_env_pairs | default([]) }}"
   loop_control:
