@@ -1,7 +1,6 @@
 ---
-# Same defect as the Redis check above: a missing user raises inside the
-# reserved-name check below, and a blank one passes it silently and only fails once
-# Postgres rejects it.
+# A missing user raises inside the reserved-name check below, whereas a blank one
+# passes it silently and only fails once Postgres rejects it.
 - name: Rejecting a Postgres database entry with no usable user
   ansible.builtin.assert:
     that:
