@@ -171,6 +171,9 @@ workloads:
     image: "{{ worker_image }}"
     replicas: 1
     env_from: [my-app-postgres, my-app-redis] # Secret names above, applied as envFrom
+    env: # optional; non-secret values, rendered verbatim
+      LOG_LEVEL: info
+      SCRAPE_TIMEOUT_SECONDS: "30"
     resources:
       requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: 500m, memory: 512Mi }
@@ -201,9 +204,11 @@ workloads:
 
 `annotations` accepts any ingress-nginx key, merged into the rendered Ingress. Some keys are rejected: `cert-manager.io/cluster-issuer` and `nginx.ingress.kubernetes.io/ssl-redirect` are the platform's own two, and some more are rejected because they inject raw nginx configuration or collide with the ingress class this template already sets (e.g. `nginx.ingress.kubernetes.io/auth-snippet`). Every value must also already be a string: quoting a value like `basic` is safe, but an unquoted `true` or a bare number is rejected.
 
+`env` is for non-secret configuration a container reads at startup: log levels, timeouts, feature flags, the hostnames and port numbers of things the cluster already exposes. Its values are committed in plain text in the var file and readable from the Pod spec by anyone who can `get pod -o yaml` in the namespace, so a credential belongs in `app_secrets` and reaches the container through `env_from` instead. A name declared in both `env` and one of that workload's `env_from` Secrets is rejected, because Kubernetes would otherwise resolve the collision silently.
+
 Every field the template applies a default to (`imagePullPolicy: IfNotPresent`, a non-root pod `securityContext`, `restartPolicy: OnFailure` and `concurrencyPolicy: Forbid` for CronJobs) is not settable per workload, because these are the same for every workload this playbook deploys. `runAsNonRoot: true` means the container image must already run as a non-root user, or the pod fails to start.
 
-`app_db_password`, `app_redis_password`, `registry_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path. Only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay omits entirely is undefined, and that failure lands differently depending on where the key is read. A key the overlay supplies as an empty string is a second, distinct failure that a guard has to check for on purpose. A missing or empty `worker_image`, `nightly_job_image`, `frontend_image` or `registry` key is caught by name in `pre_tasks:`, before anything is applied. `app_db_password` and `app_redis_password` are also caught by name, by `roles/app_platform`'s own `validate.yml`, whether the overlay omits the key entirely or supplies it empty: that role indexes `postgres_databases` and `redis_users` by position rather than looping the list itself, the same fix applied to the checks above, so a missing key never reaches the raw loop expression that used to raise a bare Jinja error naming only the variable.
+`app_db_password`, `app_redis_password`, `registry_password`, `worker_image`, `nightly_job_image` and `frontend_image` above are plain variable names, not `lookup('env', ...)`: nothing puts values into the `ansible-playbook` process's environment for this path. Only the `ansible_extra_vars` secret does (see [Secrets](#secrets) below). A key the overlay omits entirely is undefined, and that failure lands differently depending on where the key is read. A key the overlay supplies as an empty string is a second, distinct failure that a guard has to check for on purpose. A missing or empty `worker_image`, `nightly_job_image`, `frontend_image` or `registry` key is caught by name in `pre_tasks:`, before anything is applied. `app_db_password` and `app_redis_password` are also caught by name, by `roles/app_platform`'s own `validate_postgres.yml` and `validate_redis.yml`, whether the overlay omits the key entirely or supplies it empty: those checks index `postgres_databases` and `redis_users` by position rather than looping the list itself, the same fix applied to the checks above, so a missing key never reaches the raw loop expression that used to raise a bare Jinja error naming only the variable.
 
 This path needs no service account rules beyond the two Quick Start blocks above, because together they already cover `cronjobs`, `pods` and `pods/exec`.
 

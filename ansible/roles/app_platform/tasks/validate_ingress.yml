@@ -1,0 +1,106 @@
+---
+# ingress.annotations is a generic passthrough (any key becomes a literal Ingress
+# annotation), so nothing here inspects a key's meaning, only its shape and identity.
+- name: Rejecting a workload ingress.annotations that is not a mapping
+  ansible.builtin.assert:
+    that:
+      - workloads[item].ingress.annotations is mapping
+    fail_msg: >-
+      workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+      ingress.annotations that is not a mapping. Supply a mapping of annotation
+      key to string value.
+    quiet: true
+  loop: "{{ range(workloads | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ workloads[item].name | default('(unnamed)') }}"
+  when: workloads[item].ingress is defined and workloads[item].ingress.annotations is defined
+
+# Flattened once so the per-key checks below loop (workload, key) pairs
+# directly: an assert task takes one loop, not one per workload times one per key.
+- name: Flattening workload ingress.annotations into (workload, key) pairs
+  ansible.builtin.set_fact:
+    app_platform_annotation_pairs: >-
+      {{ app_platform_annotation_pairs | default([]) +
+         (workloads[item].ingress.annotations
+          | dict2items
+          | map('combine', {'workload': workloads[item].name})
+          | list) }}
+  loop: "{{ range(workloads | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ workloads[item].name | default('(unnamed)') }}"
+  when: workloads[item].ingress is defined and workloads[item].ingress.annotations is defined
+
+# Placed ahead of the syntax check below: item.key.split('/') there raises an
+# unhandled AnsibleUndefinedVariable on a non-string key instead of this file's
+# own fail_msg, so a non-string key must be caught by name first.
+- name: Rejecting a workload ingress.annotations key that is not a string
+  ansible.builtin.assert:
+    that:
+      - item.key is string
+    fail_msg: >-
+      workload {{ item.workload }} declares ingress.annotations key
+      "{{ item.key }}" that is not a string. Annotation keys must be strings.
+      Quote the key in the var file.
+    quiet: true
+  loop: "{{ app_platform_annotation_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
+- name: Rejecting a workload ingress.annotations key that fails the syntax check
+  ansible.builtin.assert:
+    that:
+      - item.key is match('^[A-Za-z0-9._/-]+\Z')
+      - (item.key.split('/') | last | length) <= 63
+      - item.key.split('/') | length <= 2
+      - item.key.split('/') | map('length') | min >= 1
+    fail_msg: >-
+      workload {{ item.workload }} declares ingress.annotations key
+      "{{ item.key }}" that fails the syntax check: a key must be non-empty,
+      contain no whitespace, use only [A-Za-z0-9._/-], contain at most one /,
+      have every segment non-empty, and have its segment after the last /
+      63 characters or fewer.
+    quiet: true
+  loop: "{{ app_platform_annotation_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
+# Annotations are map[string]string, so an unquoted true/false/no/yes or a bare
+# number parses as a YAML scalar of the wrong type. The check rejects instead
+# of stringifying it, because coercing would apply a value the author never wrote.
+- name: Rejecting a workload ingress.annotations value that is not a string
+  ansible.builtin.assert:
+    that:
+      - item.value is string
+    fail_msg: >-
+      workload {{ item.workload }} declares ingress.annotations key
+      "{{ item.key }}" with a value that is not a string. Annotation values
+      must be strings. Quote the value in the var file.
+    quiet: true
+  loop: "{{ app_platform_annotation_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
+# One shared ingress-nginx controller serves every Ingress on this cluster, so a
+# snippet annotation slipped into one app's var file is not scoped to that app alone.
+- name: Rejecting a workload ingress.annotations key that is reserved
+  ansible.builtin.assert:
+    that:
+      - item.key not in app_platform_reserved_ingress_annotations
+    fail_msg: >-
+      workload {{ item.workload }} declares ingress.annotations key
+      "{{ item.key }}" which is reserved: it is either load-bearing for TLS,
+      injects raw nginx/Lua configuration, or disagrees with the
+      ingressClassName this template already sets. Remove it from
+      ingress.annotations.
+    quiet: true
+  vars:
+    app_platform_reserved_ingress_annotations:
+      - cert-manager.io/cluster-issuer
+      - nginx.ingress.kubernetes.io/ssl-redirect
+      - nginx.ingress.kubernetes.io/configuration-snippet
+      - nginx.ingress.kubernetes.io/server-snippet
+      - nginx.ingress.kubernetes.io/auth-snippet
+      - kubernetes.io/ingress.class
+  loop: "{{ app_platform_annotation_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"

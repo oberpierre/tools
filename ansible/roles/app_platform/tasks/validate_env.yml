@@ -1,0 +1,115 @@
+---
+# env is a generic passthrough for plain configuration, so nothing here inspects
+# a key's meaning, only its shape, its type and whether env_from already supplies it.
+- name: Rejecting a workload env that is not a mapping
+  ansible.builtin.assert:
+    that:
+      - workloads[item].env is mapping
+    fail_msg: >-
+      workloads entry {{ workloads[item].name | default('(unnamed)') }} declares
+      env that is not a mapping. Supply a mapping of environment variable name to
+      string value.
+    quiet: true
+  loop: "{{ range(workloads | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ workloads[item].name | default('(unnamed)') }}"
+  when: workloads[item].env is defined
+
+# Flattened once so the per-key checks below loop (workload, key) pairs directly:
+# an assert task takes one loop, not one per workload times one per key.
+- name: Flattening workload env into (workload, key) pairs
+  ansible.builtin.set_fact:
+    app_platform_env_pairs: >-
+      {{ app_platform_env_pairs | default([]) +
+         (workloads[item].env
+          | dict2items
+          | map('combine', {'workload': workloads[item].name})
+          | list) }}
+  loop: "{{ range(workloads | default([]) | length) | list }}"
+  loop_control:
+    label: "{{ workloads[item].name | default('(unnamed)') }}"
+  when: workloads[item].env is defined
+
+# Placed ahead of the syntax check below so a non-string key is named as such,
+# rather than falling through to the syntax check's generic message: match()
+# returns false rather than raising on a non-string key, so this ordering is
+# for a clearer message, not to prevent a crash.
+- name: Rejecting a workload env key that is not a string
+  ansible.builtin.assert:
+    that:
+      - item.key is string
+    fail_msg: >-
+      workload {{ item.workload }} declares env key "{{ item.key }}" that is not
+      a string. Environment variable names must be strings. Quote the key in the
+      var file.
+    quiet: true
+  loop: "{{ app_platform_env_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
+- name: Rejecting a workload env key that fails the syntax check
+  ansible.builtin.assert:
+    that:
+      - item.key is match('^[-._A-Za-z][-._A-Za-z0-9]*\Z')
+    fail_msg: >-
+      workload {{ item.workload }} declares env key "{{ item.key }}" that fails
+      the syntax check: a name must start with a letter, underscore, period or
+      hyphen, and contain only letters, digits, underscores, periods and hyphens
+      thereafter.
+    quiet: true
+  loop: "{{ app_platform_env_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
+# env values reach the Pod spec as literal strings, so an unquoted true, no or a
+# bare number is a YAML scalar of the wrong type and the API rejects the whole Pod
+# spec.
+- name: Rejecting a workload env value that is not a string
+  ansible.builtin.assert:
+    that:
+      - item.value is string
+    fail_msg: >-
+      workload {{ item.workload }} declares env key "{{ item.key }}" with a value
+      that is not a string. Environment variable values must be strings. Quote
+      the value in the var file.
+    quiet: true
+  loop: "{{ app_platform_env_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
+
+# Only an env_from entry naming a Secret app_secrets actually declares, as a mapping,
+# is considered: one naming an undeclared Secret, or one whose value is malformed, is a
+# separate gap validate.yml's later includes catch or leave uncaught, not this one's.
+- name: Flattening each workload's env_from Secret names into (workload, secret, keys) triples
+  ansible.builtin.set_fact:
+    app_platform_env_from_keys: >-
+      {{ app_platform_env_from_keys | default([]) +
+         [ {'workload': item.0.name, 'secret': item.1, 'keys': app_secrets[item.1].keys() | list} ] }}
+  loop: "{{ workloads | default([]) | subelements('env_from', skip_missing=True) }}"
+  loop_control:
+    label: "{{ item.0.name }}/{{ item.1 }}"
+  when: item.1 in (app_secrets | default({})) and app_secrets[item.1] is mapping
+
+# Kubernetes lets env silently win over envFrom whatever order the two blocks
+# appear in, so a name declared in both is rejected rather than resolved for
+# the author.
+- name: Rejecting a workload env key already supplied by one of its env_from Secrets
+  ansible.builtin.assert:
+    that:
+      - app_platform_env_from_collision == []
+    fail_msg: >-
+      workload {{ item.workload }} declares env key "{{ item.key }}" that is
+      already supplied by its env_from Secret
+      {{ app_platform_env_from_collision | map(attribute='secret') | join(', ') }}.
+      Each variable name may come from only one of env or env_from.
+    quiet: true
+  vars:
+    app_platform_env_from_collision: >-
+      {{ app_platform_env_from_keys
+         | default([])
+         | selectattr('workload', 'equalto', item.workload)
+         | selectattr('keys', 'contains', item.key)
+         | list }}
+  loop: "{{ app_platform_env_pairs | default([]) }}"
+  loop_control:
+    label: "{{ item.workload }}/{{ item.key }}"
