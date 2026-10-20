@@ -7,12 +7,14 @@
     state: absent
   become: true
 
+# Fetched only when missing, so every playbook using this role does not depend on the
+# key host being reachable on each run. Delete the file to pick up a rotated key.
 - name: Adding Helm apt-key
   ansible.builtin.get_url:
     url: https://packages.buildkite.com/helm-linux/helm-debian/gpgkey
     dest: /etc/apt/keyrings/helm.asc
     mode: "0644"
-    force: true
+    force: false
   become: true
 
 - name: Adding Helm apt repository
