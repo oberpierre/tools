@@ -46,12 +46,15 @@
         values:
           architecture: standalone
 
-          # aclfile added to the chart's own appendonly/save defaults: setting this key
-          # replaces rather than merges with the chart default, so both must stay here.
+          # This key replaces the chart default rather than merging, so appendonly and save must stay here.
+          # maxmemory sits well under the container limit, because an AOF rewrite forks and copy-on-write can outgrow the dataset.
+          # noeviction makes a full Redis refuse writes rather than drop queued work or get OOM-killed.
           commonConfiguration: |-
             appendonly yes
             save ""
             aclfile /data/users.acl
+            maxmemory 320mb
+            maxmemory-policy noeviction
 
           auth:
             enabled: true
@@ -93,6 +96,15 @@
                   - name: redis-data
                     mountPath: /data
 
+            # Setting this replaces the chart's resourcesPreset, whose 192Mi limit the dataset outgrew.
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: "1"
+                memory: 512Mi
+
             persistence:
               enabled: true
               size: 8Gi
@@ -108,3 +120,26 @@
             enabled: true
             serviceMonitor:
               enabled: true
+            prometheusRule:
+              enabled: true
+              additionalLabels:
+                release: kube-prometheus-stack
+              # Ansible's raw and Helm's backtick literal each pass Prometheus's {{ $labels }} through, because the chart runs rules through tpl.
+              rules:
+                - alert: RedisMemoryNearMax
+                  expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8 and redis_memory_max_bytes > 0
+                  for: 15m
+                  labels:
+                    severity: warning
+                  annotations:
+                    summary: "Redis memory above 80% of maxmemory"
+                    description: >-
+                      {% raw %}{{`{{ $labels.instance }} is at {{ $value | humanizePercentage }} of maxmemory.
+                      Check queue lengths with LLEN.`}}{% endraw %}
+                - alert: RedisRestarting
+                  expr: increase(kube_pod_container_status_restarts_total{namespace="{{ redis_namespace }}", container="redis"}[30m]) > 2
+                  labels:
+                    severity: critical
+                  annotations:
+                    summary: "Redis is restarting repeatedly"
+                    description: "{% raw %}{{`{{ $labels.pod }} restarted {{ $value }} times in 30m. Check for OOMKilled.`}}{% endraw %}"
